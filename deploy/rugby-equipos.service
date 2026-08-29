@@ -1,0 +1,25 @@
+[Unit]
+Description=Armado de equipos - club de rugby
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/rugby-equipos
+EnvironmentFile=/opt/rugby-equipos/.env
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rugby-equipos
+
+# Endurecimiento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/rugby-equipos/data
+
+[Install]
+WantedBy=multi-user.target

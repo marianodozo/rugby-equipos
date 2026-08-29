@@ -1,0 +1,10 @@
+node_modules
+data
+backups
+.env
+.git
+.gitignore
+*.log
+*.zip
+README.md
+deploy/backup.sh

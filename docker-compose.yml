@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    image: rugby-equipos:latest
+    container_name: rugby-equipos
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8090
+      DB_PATH: /app/data/rugby.db
+    volumes:
+      # La base vive en el host: sobrevive a rebuilds y updates.
+      - ./data:/app/data
+    ports:
+      # Solo localhost: quien publica hacia afuera es nginx o el perfil "https".
+      - "127.0.0.1:${PUERTO_HOST:-8090}:8090"
+
+  # Perfil opcional: HTTPS automático (Let's Encrypt) sin instalar nada en el EC2.
+  # Requiere los puertos 80 y 443 LIBRES en el host.
+  #   docker compose --profile https up -d
+  caddy:
+    image: caddy:2-alpine
+    container_name: rugby-equipos-caddy
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      DOMINIO: ${DOMINIO:?Definí DOMINIO en el .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
