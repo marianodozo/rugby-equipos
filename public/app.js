@@ -105,7 +105,7 @@ function openSheet(titulo, bodyHTML, onMount, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'backdrop';
   wrap.innerHTML = `
-    <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet${opts.alta ? ' alta' : ''}" role="dialog" aria-modal="true">
       <header>
         <h2>${titulo}</h2>
         <button type="button" aria-label="Cerrar" data-close>&times;</button>
@@ -380,6 +380,7 @@ async function abrirSelector(m, numero, onCambio, encadenar) {
 
   let target = numero;
   const w = openSheet(`N° ${target} · ${etiquetaNumero(target)}`, `<ul class="plist" id="lista"></ul>`, null, {
+    alta: true,
     sticky: `<div class="search">${ICON.buscar}
       <input id="q" placeholder="Buscar por apellido, nombre o apodo" autocomplete="off" autocapitalize="words" enterkeyhint="done">
     </div>`,
@@ -766,6 +767,20 @@ async function router() {
   } catch (err) {
     if (err.message !== 'Sesión vencida') toast(err.message, true);
   }
+}
+
+/* Teclado virtual: mantiene los paneles dentro del área visible.
+   Sin esto, en el celular el teclado tapa la lista de jugadores. */
+function ajustarTeclado() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const tapado = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.documentElement.style.setProperty('--kb', Math.round(tapado) + 'px');
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', ajustarTeclado);
+  visualViewport.addEventListener('scroll', ajustarTeclado);
+  ajustarTeclado();
 }
 
 window.addEventListener('hashchange', () => { sheetRoot.innerHTML = ''; document.body.style.overflow = ''; router(); });
