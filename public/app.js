@@ -359,6 +359,8 @@ async function viewPartido(id) {
     <button class="btn sec" data-vivo>${m.estado === 'finalizado' ? 'Ver el partido jugado' : m.estado === 'en_curso' ? '● Seguir en vivo' : '▶ Seguir el partido en vivo'}</button>
     <div style="height:10px"></div>
     <button class="btn sec" data-exportar>Exportar para WhatsApp</button>
+    ${m.estado === 'programado' ? '' : `<div style="height:10px"></div>
+    <button class="btn sec" data-compartir>Compartir resultado o enlace</button>`}
     ${bloques}`;
 
   shell({
@@ -375,6 +377,8 @@ async function viewPartido(id) {
 
   $('[data-agregar]').onclick = () => abrirSelector(m, siguienteLibre(m), refrescar, true);
   $('[data-vivo]').onclick = () => { location.hash = '#/vivo/' + m.id; };
+  const bComp = $('[data-compartir]');
+  if (bComp) bComp.onclick = () => sheetCompartir(m.id);
   $('[data-exportar]').onclick = () => exportar(m.id);
   $('[data-menu]').onclick = () => menuPartido(m);
 
@@ -1047,6 +1051,8 @@ function pintarVivo() {
         </div>`).join('') : '<div class="muted" style="padding:4px 6px 12px">Todavía no se cargó nada.</div>'}
 
       <div style="height:6px"></div>
+      <button class="btn sec" data-compartir>Compartir resultado o enlace</button>
+      <div style="height:8px"></div>
       <button class="btn sec" data-resumen>Exportar resumen</button>
       <div style="height:8px"></div>
       <button class="btn sec" data-plantel>Ver el plantel</button>
@@ -1077,6 +1083,7 @@ function pintarVivo() {
     });
   });
   $('[data-resumen]').onclick = () => exportar(p.id, 'resumen');
+  $('[data-compartir]').onclick = () => sheetCompartir(p.id);
   $('[data-plantel]').onclick = () => { location.hash = '#/partido/' + p.id; };
   $('[data-menu]').onclick = () => menuVivo();
 }
@@ -1224,6 +1231,249 @@ function menuVivo() {
       };
     });
   });
+}
+
+
+/* ------------------------------------------------------- compartir */
+
+// Dibuja la placa del resultado: marcador y cronología, sin penales cometidos.
+async function imagenResultado(v) {
+  const p = v.partido;
+  const club = v.club || CLUB;
+  const eventos = v.eventos.filter((e) => e.tipo !== 'infraccion');
+  const filas = eventos.slice(-16);
+  const sobran = eventos.length - filas.length;
+
+  const W = 1080;
+  const ALTO_FILA = 64;
+  const TOPE = 660;
+  const H = Math.max(1080, TOPE + filas.length * ALTO_FILA + (sobran > 0 ? 50 : 0) + 90);
+
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+
+  const AZUL = '#1d2450', AZUL2 = '#293263';
+  const BLANCO = '#ffffff', TENUE = '#a8b0d4', ROSA = '#d98cb0';
+  const FUENTE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  const fondo = g.createLinearGradient(0, 0, 0, H);
+  fondo.addColorStop(0, AZUL2);
+  fondo.addColorStop(1, AZUL);
+  g.fillStyle = fondo;
+  g.fillRect(0, 0, W, H);
+
+  const recortar = (txt, max) => {
+    let t = String(txt || '');
+    if (g.measureText(t).width <= max) return t;
+    while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1);
+    return t + '…';
+  };
+
+  // escudo, sobre un disco blanco para que no se pierda contra el azul
+  try {
+    const logo = new Image();
+    logo.src = '/logo.png';
+    await logo.decode();
+    g.fillStyle = BLANCO;
+    g.beginPath();
+    g.arc(116, 108, 58, 0, Math.PI * 2);
+    g.fill();
+    g.drawImage(logo, 64, 56, 104, 104);
+  } catch (e) { /* si no carga, seguimos sin escudo */ }
+
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = BLANCO;
+  g.font = `700 40px ${FUENTE}`;
+  g.fillText(recortar(club.toUpperCase(), 780), 196, 100);
+  g.fillStyle = TENUE;
+  g.font = `400 30px ${FUENTE}`;
+  g.fillText(recortar(`Equipo ${p.equipo} · ${fechaCorta(p.fecha_hora)}${p.lugar ? ' · ' + p.lugar : ''}`, 800), 196, 146);
+
+  // marcador
+  const yEq = 300, yPts = 430;
+  g.textAlign = 'center';
+  g.font = `700 38px ${FUENTE}`;
+  g.fillStyle = TENUE;
+  g.fillText(recortar(nombreCorto().toUpperCase(), 400), 280, yEq);
+  g.fillText(recortar(String(p.rival).toUpperCase(), 400), 800, yEq);
+
+  g.fillStyle = BLANCO;
+  g.font = `800 150px ${FUENTE}`;
+  g.fillText(String(v.marcador.nosotros), 280, yPts);
+  g.fillText(String(v.marcador.rival), 800, yPts);
+  g.fillStyle = TENUE;
+  g.font = `300 96px ${FUENTE}`;
+  g.fillText('–', 540, yPts - 14);
+
+  // estado
+  const etiqueta = p.estado === 'finalizado'
+    ? 'FINAL'
+    : p.estado === 'en_curso' ? `EN JUEGO · ${nombrePeriodo(p)}` : 'SIN COMENZAR';
+  g.font = `700 30px ${FUENTE}`;
+  const anchoChip = g.measureText(etiqueta).width + 60;
+  const xChip = (W - anchoChip) / 2;
+  g.fillStyle = p.estado === 'finalizado' ? 'rgba(255,255,255,.14)' : ROSA;
+  g.beginPath();
+  g.roundRect(xChip, 480, anchoChip, 58, 29);
+  g.fill();
+  g.fillStyle = p.estado === 'finalizado' ? BLANCO : AZUL;
+  g.fillText(etiqueta, W / 2, 519);
+
+  // cronología
+  g.textAlign = 'left';
+  g.fillStyle = TENUE;
+  g.font = `700 26px ${FUENTE}`;
+  g.fillText('CRONOLOGÍA', 64, 610);
+  g.strokeStyle = 'rgba(255,255,255,.14)';
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(64, 630); g.lineTo(W - 64, 630); g.stroke();
+
+  let y = TOPE + 30;
+  for (const e of filas) {
+    const nuestro = e.equipo !== 'rival';
+    g.fillStyle = nuestro ? ROSA : 'rgba(255,255,255,.35)';
+    g.beginPath();
+    g.arc(78, y - 10, 9, 0, Math.PI * 2);
+    g.fill();
+
+    g.fillStyle = TENUE;
+    g.font = `700 30px ${FUENTE}`;
+    g.fillText(`${Math.floor(e.t_abs / 60) + 1}'`, 108, y);
+
+    g.fillStyle = BLANCO;
+    g.font = `600 32px ${FUENTE}`;
+    const quien = nuestro
+      ? (e.apellido ? `${e.nombre} ${e.apellido}` : nombreCorto())
+      : p.rival;
+    const texto = `${NOMBRE_TIPO[e.tipo] || e.tipo} — ${quien}`;
+    g.fillText(recortar(texto, W - 300), 200, y);
+
+    if (e.puntos) {
+      g.textAlign = 'right';
+      g.fillStyle = TENUE;
+      g.font = `700 30px ${FUENTE}`;
+      g.fillText(`+${e.puntos}`, W - 64, y);
+      g.textAlign = 'left';
+    }
+    y += ALTO_FILA;
+  }
+  if (sobran > 0) {
+    g.fillStyle = TENUE;
+    g.font = `400 28px ${FUENTE}`;
+    g.fillText(`y ${sobran} acciones más`, 108, y + 6);
+  }
+
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(255,255,255,.35)';
+  g.font = `600 26px ${FUENTE}`;
+  g.fillText(club.toUpperCase(), W / 2, H - 46);
+
+  return new Promise((r) => c.toBlob(r, 'image/png'));
+}
+
+function tituloPartido(v) {
+  const p = v.partido;
+  return `${nombreCorto()} ${v.marcador.nosotros} - ${v.marcador.rival} ${p.rival}`;
+}
+
+async function sheetCompartir(matchId) {
+  const v = await api('/matches/' + matchId + '/vivo');
+  v.recibido = Date.now();
+  const p = v.partido;
+
+  const w = openSheet('Compartir', `
+    <div id="prev-caja">
+      <div class="muted" style="padding:20px 0;text-align:center">Armando la imagen…</div>
+    </div>
+    <button class="btn" data-img>Compartir imagen</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-bajar>Descargar imagen</button>
+
+    <div class="sec-title">Seguimiento en vivo</div>
+    <p class="muted" style="margin:0 0 12px">
+      Un enlace para que cualquiera vea el tiempo, el resultado y la cronología.
+      No pueden tocar nada, y los penales cometidos no se muestran.
+    </p>
+    <div id="enlace-caja"></div>
+  `, null, { alta: true });
+
+  /* --- imagen --- */
+  let blob = null;
+  const caja = w.querySelector('#prev-caja');
+  imagenResultado(v).then((b) => {
+    blob = b;
+    const url = URL.createObjectURL(b);
+    caja.innerHTML = `<img src="${url}" alt="Resultado" class="preview-img">`;
+  }).catch(() => {
+    caja.innerHTML = '<div class="muted">No se pudo generar la imagen.</div>';
+  });
+
+  w.querySelector('[data-img]').onclick = async () => {
+    if (!blob) return toast('Esperá un segundo, se está generando', true);
+    const file = new File([blob], 'resultado.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text: tituloPartido(v) });
+      } catch (e) { /* si cancela, no pasa nada */ }
+    } else {
+      bajarImagen(blob);
+      toast('Imagen descargada: compartila desde la galería');
+    }
+  };
+  w.querySelector('[data-bajar]').onclick = () => {
+    if (blob) bajarImagen(blob);
+  };
+
+  /* --- enlace --- */
+  const cajaEnlace = w.querySelector('#enlace-caja');
+  const pintarEnlace = (token) => {
+    if (!token) {
+      cajaEnlace.innerHTML = `<button class="btn sec" data-crear>Crear enlace para compartir</button>`;
+      cajaEnlace.querySelector('[data-crear]').onclick = async () => {
+        const r = await api(`/matches/${matchId}/compartir`, { method: 'POST' });
+        pintarEnlace(r.token);
+        toast('Enlace creado');
+      };
+      return;
+    }
+    const url = location.origin + '/v/' + token;
+    cajaEnlace.innerHTML = `
+      <div class="export-box" style="max-height:none">${esc(url)}</div>
+      <div style="height:10px"></div>
+      <button class="btn" data-wa>Mandar el enlace por WhatsApp</button>
+      <div style="height:8px"></div>
+      <button class="btn sec" data-copiar>Copiar enlace</button>
+      <div style="height:8px"></div>
+      <button class="btn dan" data-baja>Dar de baja el enlace</button>`;
+    cajaEnlace.querySelector('[data-wa]').onclick = () => {
+      const txt = `Seguí en vivo ${nombreCorto()} vs ${p.rival}: ${url}`;
+      window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+    };
+    cajaEnlace.querySelector('[data-copiar]').onclick = async () => {
+      try { await navigator.clipboard.writeText(url); toast('Copiado'); }
+      catch { toast('Copialo a mano desde el recuadro', true); }
+    };
+    cajaEnlace.querySelector('[data-baja]').onclick = () => confirmar(
+      'El enlace deja de funcionar para todos los que lo tengan. ¿Seguro?',
+      async () => {
+        await api(`/matches/${matchId}/compartir`, { method: 'DELETE' });
+        pintarEnlace(null);
+        toast('Enlace dado de baja');
+      }, 'Sí, dar de baja');
+  };
+  pintarEnlace(p.share_token);
+}
+
+function bajarImagen(blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'resultado.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 /* ------------------------------------------------------------------ router */

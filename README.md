@@ -87,6 +87,22 @@ dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
 **Resumen** (resultado, quién hizo los puntos, los penales cometidos y las
 tarjetas).
 
+### Compartir
+
+Desde la pantalla **En vivo** (o desde un partido ya jugado) hay dos formas de
+mostrar el partido afuera del club:
+
+- **Imagen del resultado**: una placa PNG con el escudo, el marcador y la
+  cronología, pensada para WhatsApp e Instagram. Se genera en el propio celular
+  y sale por el menú nativo de compartir; si el navegador no lo soporta, se
+  descarga. **No incluye los penales cometidos.**
+- **Enlace en vivo**: `https://tu-dominio/v/<token>` — una página de **solo
+  lectura**, sin login, que muestra el tiempo corriendo, el resultado y la
+  cronología, y se actualiza sola cada 10 segundos. Quien la abre no puede tocar
+  nada: la API pública solo devuelve esos datos (ni penales, ni DNI, ni plantel)
+  y todo lo que modifica sigue pidiendo sesión. El enlace se da de baja cuando
+  quieras desde la misma pantalla, y deja de funcionar para todos.
+
 ### Identidad del club
 
 La app usa el escudo y los colores de Barceló Rugby: azul marino `#293263` y el

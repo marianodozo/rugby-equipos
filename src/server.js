@@ -597,7 +597,7 @@ function vivoDe(matchId) {
       fecha_hora: m.fecha_hora, notas: m.notas, estado: m.estado,
       periodo: m.periodo, reloj_corriendo: m.reloj_corriendo,
       reloj_base_seg: m.reloj_base_seg, reloj_desde: m.reloj_desde,
-      primer_tiempo_seg: m.primer_tiempo_seg,
+      primer_tiempo_seg: m.primer_tiempo_seg, share_token: m.share_token,
     },
     club: CLUB,
     ahora: Date.now(),
@@ -607,6 +607,71 @@ function vivoDe(matchId) {
     penales,
   };
 }
+
+/* Vista pública: lo mismo que ve el club pero sin penales cometidos y sin
+   ninguna acción posible. Se sirve sin login, contra un token del partido. */
+function publicoDe(m) {
+  const eventos = eventosDe(m.id)
+    .filter((e) => e.tipo !== 'infraccion')
+    .map((e) => ({
+      id: e.id, tipo: e.tipo, equipo: e.equipo, puntos: e.puntos,
+      periodo: e.periodo, t_abs: e.t_abs,
+      nombre: e.nombre, apellido: e.apellido,
+    }));
+
+  const marcador = { nosotros: 0, rival: 0 };
+  for (const e of eventos) marcador[e.equipo === 'rival' ? 'rival' : 'nosotros'] += e.puntos;
+
+  return {
+    club: CLUB,
+    partido: {
+      equipo: m.equipo, rival: m.rival, lugar: m.lugar, fecha_hora: m.fecha_hora,
+      estado: m.estado, periodo: m.periodo, reloj_corriendo: m.reloj_corriendo,
+      reloj_base_seg: m.reloj_base_seg, reloj_desde: m.reloj_desde,
+      primer_tiempo_seg: m.primer_tiempo_seg,
+    },
+    ahora: Date.now(),
+    marcador,
+    eventos,
+  };
+}
+
+app.get(
+  '/api/publico/:token',
+  wrap((req, res) => {
+    const token = String(req.params.token || '').replace(/[^a-f0-9]/gi, '');
+    const m = token && db.prepare('SELECT * FROM matches WHERE share_token = ?').get(token);
+    if (!m) return res.status(404).json({ error: 'Este enlace no existe o fue dado de baja' });
+    res.json(publicoDe(m));
+  })
+);
+
+// Crear / recuperar el enlace público
+app.post(
+  '/api/matches/:id/compartir',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
+    if (!m) return res.status(404).json({ error: 'Partido no encontrado' });
+    let token = m.share_token;
+    if (!token) {
+      token = crypto.randomBytes(12).toString('hex');
+      db.prepare('UPDATE matches SET share_token = ? WHERE id = ?').run(token, id);
+    }
+    res.json({ token, ruta: '/v/' + token });
+  })
+);
+
+// Dar de baja el enlace
+app.delete(
+  '/api/matches/:id/compartir',
+  auth,
+  wrap((req, res) => {
+    db.prepare('UPDATE matches SET share_token = NULL WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
+  })
+);
 
 app.get(
   '/api/matches/:id/vivo',
@@ -868,6 +933,11 @@ app.use(
     },
   })
 );
+
+// Página pública de solo lectura (no pasa por el login)
+app.get('/v/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'publico.html'));
+});
 
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'No encontrado' });

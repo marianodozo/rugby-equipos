@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS match_events (
 CREATE INDEX IF NOT EXISTS idx_events_match ON match_events(match_id, t_abs);
 `);
 
+// Enlace público de solo lectura para seguir el partido
+agregarColumna('matches', 'share_token', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_share ON matches(share_token) WHERE share_token IS NOT NULL');
+
 // Penales cometidos: el subtipo (offside, no rolar, etc.)
 agregarColumna('match_events', 'detalle', 'TEXT');
 
