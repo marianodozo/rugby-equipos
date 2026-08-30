@@ -108,8 +108,12 @@ app.post(
     const user = db
       .prepare('SELECT * FROM users WHERE username = ? AND activo = 1')
       .get(username);
-    if (!user || !bcrypt.compareSync(password, user.password_hash))
+    const ip = req.headers['x-forwarded-for'] || req.ip;
+    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      console.log(`[login] rechazado usuario=${username} ip=${ip}`);
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    }
+    console.log(`[login] ok usuario=${username} ip=${ip}`);
 
     const token = crypto.randomBytes(32).toString('hex');
     db.prepare(

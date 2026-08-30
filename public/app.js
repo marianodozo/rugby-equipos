@@ -79,12 +79,19 @@ function toast(msg, err) {
 }
 
 async function api(url, opts = {}) {
-  const res = await fetch('/api' + url, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch('/api' + url, {
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      ...opts,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch (e) {
+    // fetch tira TypeError cuando la petición ni sale: sin señal, DNS que no
+    // resuelve, certificado rechazado. "Failed to fetch" no le dice nada a nadie.
+    throw new Error('No se pudo conectar con el servidor. Probá cambiando de WiFi a datos móviles (o al revés).');
+  }
   if (res.status === 401 && !url.startsWith('/login')) {
     ME = null;
     location.hash = '';

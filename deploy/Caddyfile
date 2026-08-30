@@ -1,5 +1,11 @@
 # Caddy saca y renueva el certificado solo. El dominio sale del .env (DOMINIO).
 {$DOMINIO} {
 	encode gzip
+	# Log de accesos: sirve para saber si un pedido llegó siquiera al servidor
+	# cuando alguien reporta que no puede entrar desde su celular.
+	log {
+		output stdout
+		format console
+	}
 	reverse_proxy app:8090
 }
