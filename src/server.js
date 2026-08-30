@@ -807,13 +807,16 @@ app.get(
 
 /* -------------------------------------------------------------- estáticos */
 
+// El código de la app (html/js/css) va con no-cache: el navegador igual
+// revalida contra el servidor, así que un deploy se ve en el primer refresh
+// en vez de quedar hasta una hora con la versión vieja en el celular.
+// Las imágenes, que casi no cambian, sí se cachean.
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
-    maxAge: '1h',
+    etag: true,
     setHeaders(res, filePath) {
-      if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
-        res.setHeader('Cache-Control', 'no-cache');
-      }
+      const codigo = /\.(html|js|css|json|webmanifest)$/i.test(filePath);
+      res.setHeader('Cache-Control', codigo ? 'no-cache' : 'public, max-age=604800');
     },
   })
 );
