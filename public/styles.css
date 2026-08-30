@@ -244,3 +244,62 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
   font-size: 13px; background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; padding: 12px; max-height: 44dvh; overflow-y: auto;
 }
+
+/* ----------------------------------------------------------- en vivo */
+
+.marcador {
+  display: flex; align-items: stretch; gap: 8px;
+  background: var(--marca-osc); color: #fff;
+  border-radius: var(--radio); padding: 14px 12px; margin-bottom: 10px;
+}
+.marcador .lado { flex: 1; min-width: 0; text-align: center; }
+.marcador .eq {
+  display: block; font-size: 12px; font-weight: 650; opacity: .8;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.marcador .pts { display: block; font-size: 40px; font-weight: 750; line-height: 1.1; }
+.marcador .sep { align-self: center; font-size: 26px; opacity: .5; }
+
+.reloj-card { text-align: center; }
+.reloj {
+  font-size: 52px; font-weight: 700; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums; margin: 6px 0 12px; color: var(--txt-2);
+}
+.reloj.on { color: var(--txt); }
+
+.segmento {
+  display: flex; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 3px; gap: 3px;
+}
+.segmento button {
+  flex: 1; min-width: 0; border: 0; background: transparent; color: var(--txt-2);
+  padding: 10px 6px; border-radius: 9px; font-weight: 650; font-size: 14px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.segmento button.on { background: var(--marca); color: var(--sobre-marca); }
+
+.grid-puntos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.btn.punto {
+  flex-direction: column; gap: 2px; min-height: 62px; font-size: 15px;
+}
+.btn.punto small { font-size: 11px; font-weight: 600; opacity: .75; }
+.btn.punto.tarjeta { background: var(--card); color: var(--txt); border: 1px solid var(--line); }
+
+.tarj { flex: 0 0 16px; width: 16px; height: 22px; border-radius: 3px; }
+.tarj.amarilla { background: #e8b93a; }
+.tarj.roja { background: #d0453a; }
+.cuenta {
+  flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 700;
+  color: var(--acento); font-size: 15px;
+}
+.cuenta.ok { color: var(--txt-2); font-weight: 600; font-size: 13px; }
+
+.evento .min {
+  flex: 0 0 40px; text-align: center; font-weight: 700; font-size: 14px;
+  color: var(--marca); font-variant-numeric: tabular-nums;
+}
+.evento .x { color: var(--txt-2); background: transparent; border: 0; font-size: 20px; padding: 6px 8px; cursor: pointer; }
+
+.card.vivo { border-color: var(--acento); }
+.chip.vivo-chip { background: var(--acento); color: #fff; letter-spacing: .04em; }
+.marcador-mini { font-weight: 750; font-size: 18px; font-variant-numeric: tabular-nums; }

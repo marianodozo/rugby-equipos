@@ -12,6 +12,7 @@ de los bots que ya tenés en el EC2 y consume muy pocos recursos: se despliega c
 - **Usuarios**: todos con los mismos permisos. Login con usuario y contraseña, sesión de 90 días (no te pide login cada vez desde el celu).
 - **Armado del plantel**: 25 lugares con **posición fija por número** (1 pilar izquierdo, 2 hooker, 9 medio scrum, 10 apertura, etc.). Cada asignación se guarda al instante, así que podés cargar el equipo en varios momentos, desde varios celulares.
 - **Export a WhatsApp**: genera el listado numerado del 1 al 25 con nombre, apellido y DNI, con botón para copiar o abrir WhatsApp directamente.
+- **Seguimiento en vivo** (pestaña *En vivo*): cronómetro de los dos tiempos, marcador, puntos con jugador, tarjetas con cuenta regresiva y cronología del partido.
 
 ### Cómo se asigna un jugador (lo más usado)
 
@@ -50,6 +51,33 @@ Cada casillero muestra la posición, así el que carga sabe qué está llenando:
 Si en el club usan otros nombres (o arman el banco distinto), se cambian en un
 solo lugar: la lista `POSICIONES` arriba de todo en `public/app.js`. No hay que
 tocar nada más ni migrar la base.
+
+### Seguimiento en vivo
+
+La pestaña **En vivo** sigue el partido desde la cancha:
+
+- **Reloj**: dos tiempos de 40 minutos, con arranque y parada para cada
+  interrupción. **Vive en el servidor**, así que si lo arranca uno lo ven todos,
+  y si se cierra la app el tiempo sigue bien. Se puede corregir a mano desde el
+  menú ⋮ si alguien se olvidó de pararlo.
+- **Puntos**: try (5), conversión (2), penal (3), drop (3) y try penal (7).
+  Primero elegís de qué lado fue con el selector, y si es nuestro te pide el
+  jugador — buscando por número del plantel, apellido o apodo, y con la opción
+  *Sin jugador* si no lo viste. Del rival solo se guarda el tipo de punto.
+- **Tarjetas**: amarilla y roja, nuestras o del rival. La amarilla muestra
+  cuánto le queda de los 10 minutos, contando **tiempo de juego**: si el reloj
+  está parado, la sanción no corre.
+- **Cronología**: todo lo cargado con su minuto, y una X para borrar lo que se
+  cargó mal.
+- La pantalla se refresca sola cada 8 segundos, así que dos personas pueden
+  cargar en paralelo desde sus celulares. Mientras esté abierta, la app pide no
+  apagar la pantalla.
+
+Los estados del partido son **programado → en curso → finalizado**. En la lista
+de Partidos, los que están en juego aparecen arriba con el marcador en vivo, y
+los terminados quedan en *Anteriores* con el resultado. Desde cualquiera de los
+dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
+**Resumen** (resultado, quién hizo los puntos y las tarjetas).
 
 ### Identidad del club
 

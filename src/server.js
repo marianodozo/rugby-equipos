@@ -325,7 +325,12 @@ app.get(
   wrap((req, res) => {
     const rows = db
       .prepare(
-        `SELECT m.*, (SELECT COUNT(*) FROM match_players mp WHERE mp.match_id = m.id) AS cargados
+        `SELECT m.*,
+                (SELECT COUNT(*) FROM match_players mp WHERE mp.match_id = m.id) AS cargados,
+                (SELECT IFNULL(SUM(e.puntos),0) FROM match_events e
+                  WHERE e.match_id = m.id AND e.equipo = 'nosotros') AS puntos_nosotros,
+                (SELECT IFNULL(SUM(e.puntos),0) FROM match_events e
+                  WHERE e.match_id = m.id AND e.equipo = 'rival') AS puntos_rival
            FROM matches m
           ORDER BY m.fecha_hora DESC`
       )
@@ -511,6 +516,192 @@ app.post(
   })
 );
 
+/* ------------------------------------------------- seguimiento en vivo */
+
+const PUNTOS = { try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7, amarilla: 0, roja: 0 };
+const NOMBRE_TIPO = {
+  try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
+  try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
+};
+const DUR_AMARILLA = 600; // 10 minutos de juego
+
+// Segundos jugados del período en curso
+function segundosPeriodo(m) {
+  const extra = m.reloj_corriendo && m.reloj_desde
+    ? Math.floor((Date.now() - m.reloj_desde) / 1000)
+    : 0;
+  return m.reloj_base_seg + extra;
+}
+
+// Segundos jugados desde el arranque del partido (para las tarjetas)
+function absoluto(m, periodo, seg) {
+  return periodo >= 2 ? m.primer_tiempo_seg + seg : seg;
+}
+
+function eventosDe(matchId) {
+  return db
+    .prepare(
+      `SELECT e.*, p.nombre, p.apellido, p.apodo
+         FROM match_events e LEFT JOIN players p ON p.id = e.player_id
+        WHERE e.match_id = ?
+        ORDER BY e.t_abs, e.id`
+    )
+    .all(matchId);
+}
+
+function vivoDe(matchId) {
+  const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!m) return null;
+  const eventos = eventosDe(matchId);
+  const seg = segundosPeriodo(m);
+  const ahoraAbs = absoluto(m, m.periodo || 1, seg);
+
+  const marcador = { nosotros: 0, rival: 0 };
+  for (const e of eventos) marcador[e.equipo === 'rival' ? 'rival' : 'nosotros'] += e.puntos;
+
+  const tarjetas = eventos
+    .filter((e) => e.tipo === 'amarilla' || e.tipo === 'roja')
+    .map((e) => ({
+      id: e.id,
+      tipo: e.tipo,
+      equipo: e.equipo,
+      player_id: e.player_id,
+      nombre: e.nombre,
+      apellido: e.apellido,
+      minuto: Math.floor(e.t_abs / 60) + 1,
+      restante: e.tipo === 'roja' ? null : Math.max(0, DUR_AMARILLA - (ahoraAbs - e.t_abs)),
+    }));
+
+  return {
+    partido: {
+      id: m.id, equipo: m.equipo, rival: m.rival, lugar: m.lugar,
+      fecha_hora: m.fecha_hora, notas: m.notas, estado: m.estado,
+      periodo: m.periodo, reloj_corriendo: m.reloj_corriendo,
+      reloj_base_seg: m.reloj_base_seg, reloj_desde: m.reloj_desde,
+      primer_tiempo_seg: m.primer_tiempo_seg,
+    },
+    club: CLUB,
+    ahora: Date.now(),
+    marcador,
+    eventos,
+    tarjetas,
+  };
+}
+
+app.get(
+  '/api/matches/:id/vivo',
+  auth,
+  wrap((req, res) => {
+    const v = vivoDe(Number(req.params.id));
+    if (!v) return res.status(404).json({ error: 'Partido no encontrado' });
+    res.json(v);
+  })
+);
+
+// Manejo del reloj y del estado del partido
+app.post(
+  '/api/matches/:id/reloj',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
+    if (!m) return res.status(404).json({ error: 'Partido no encontrado' });
+    const accion = clean(req.body.accion || '');
+
+    const set = (campos) => {
+      const claves = Object.keys(campos);
+      db.prepare(`UPDATE matches SET ${claves.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
+        .run(...claves.map((k) => campos[k]), id);
+    };
+
+    if (accion === 'iniciar') {
+      if (m.estado === 'finalizado') return res.status(400).json({ error: 'El partido ya terminó' });
+      if (m.reloj_corriendo) return res.json(vivoDe(id));
+      set({
+        estado: 'en_curso',
+        periodo: m.periodo === 0 ? 1 : m.periodo,
+        reloj_corriendo: 1,
+        reloj_desde: Date.now(),
+      });
+    } else if (accion === 'pausar') {
+      if (!m.reloj_corriendo) return res.json(vivoDe(id));
+      set({ reloj_corriendo: 0, reloj_base_seg: segundosPeriodo(m), reloj_desde: null });
+    } else if (accion === 'fin_periodo') {
+      const seg = segundosPeriodo(m);
+      if (m.periodo <= 1) {
+        set({
+          periodo: 2, primer_tiempo_seg: seg,
+          reloj_corriendo: 0, reloj_base_seg: 0, reloj_desde: null,
+          estado: 'en_curso',
+        });
+      } else {
+        set({ periodo: 3, reloj_corriendo: 0, reloj_base_seg: seg, reloj_desde: null, estado: 'finalizado' });
+      }
+    } else if (accion === 'finalizar') {
+      set({
+        estado: 'finalizado', periodo: 3,
+        reloj_corriendo: 0, reloj_base_seg: segundosPeriodo(m), reloj_desde: null,
+      });
+    } else if (accion === 'reabrir') {
+      set({ estado: 'en_curso', periodo: m.periodo === 3 ? 2 : m.periodo || 1, reloj_corriendo: 0 });
+    } else if (accion === 'ajustar') {
+      const seg = Math.max(0, Math.min(7200, Number(req.body.segundos) || 0));
+      set({ reloj_base_seg: seg, reloj_desde: m.reloj_corriendo ? Date.now() : null });
+    } else if (accion === 'reiniciar') {
+      set({
+        estado: 'programado', periodo: 0, reloj_corriendo: 0,
+        reloj_base_seg: 0, reloj_desde: null, primer_tiempo_seg: 0,
+      });
+    } else {
+      return res.status(400).json({ error: 'Acción desconocida' });
+    }
+    res.json(vivoDe(id));
+  })
+);
+
+app.post(
+  '/api/matches/:id/eventos',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(id);
+    if (!m) return res.status(404).json({ error: 'Partido no encontrado' });
+
+    const tipo = clean(req.body.tipo || '');
+    if (!(tipo in PUNTOS)) return res.status(400).json({ error: 'Tipo de evento inválido' });
+    const equipo = req.body.equipo === 'rival' ? 'rival' : 'nosotros';
+    let playerId = req.body.player_id ? Number(req.body.player_id) : null;
+    if (equipo === 'rival') playerId = null; // del rival no guardamos jugadores
+    if (playerId && !db.prepare('SELECT id FROM players WHERE id = ?').get(playerId))
+      return res.status(404).json({ error: 'Jugador no encontrado' });
+    if (m.periodo === 0)
+      return res.status(400).json({ error: 'Arrancá el reloj antes de cargar el partido' });
+
+    const periodo = Math.min(m.periodo, 2);
+    // El minuto se puede corregir a mano si se cargó tarde
+    const seg = req.body.segundos == null
+      ? segundosPeriodo(m)
+      : Math.max(0, Math.min(7200, Number(req.body.segundos)));
+
+    db.prepare(
+      `INSERT INTO match_events (match_id, tipo, equipo, player_id, puntos, periodo, segundos, t_abs, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, tipo, equipo, playerId, PUNTOS[tipo], periodo, seg, absoluto(m, periodo, seg), req.user.id);
+
+    res.status(201).json(vivoDe(id));
+  })
+);
+
+app.delete(
+  '/api/matches/:id/eventos/:eid',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    db.prepare('DELETE FROM match_events WHERE id = ? AND match_id = ?').run(Number(req.params.eid), id);
+    res.json(vivoDe(id));
+  })
+);
+
 /* ----------------------------------------------------------- exportación */
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -555,13 +746,62 @@ function textoExport(matchId) {
   return lineas.join('\n').trim();
 }
 
+function textoResumen(matchId) {
+  const m = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!m) return null;
+  const eventos = eventosDe(matchId);
+  let nos = 0, riv = 0;
+  for (const e of eventos) {
+    if (e.equipo === 'rival') riv += e.puntos; else nos += e.puntos;
+  }
+
+  const min = (e) => `${Math.floor(e.t_abs / 60) + 1}'`;
+  const jugador = (e) => (e.apellido ? ` · ${e.nombre} ${e.apellido}` : '');
+  const lineas = [];
+
+  lineas.push(`*${CLUB} ${nos} - ${riv} ${m.rival}*`);
+  lineas.push(`Equipo ${m.equipo} · ${fechaLegible(m.fecha_hora)}`);
+  if (m.lugar) lineas.push(m.lugar);
+  lineas.push(m.estado === 'finalizado' ? 'Final' : m.estado === 'en_curso' ? 'En juego' : 'Sin comenzar');
+  lineas.push('');
+
+  const puntos = eventos.filter((e) => e.puntos > 0);
+  const nuestros = puntos.filter((e) => e.equipo !== 'rival');
+  const delRival = puntos.filter((e) => e.equipo === 'rival');
+
+  if (nuestros.length) {
+    lineas.push(`*PUNTOS ${CLUB.toUpperCase()}*`);
+    for (const e of nuestros) lineas.push(`${min(e)} ${NOMBRE_TIPO[e.tipo]}${jugador(e)}`);
+    lineas.push('');
+  }
+  if (delRival.length) {
+    lineas.push(`*PUNTOS ${m.rival.toUpperCase()}*`);
+    for (const e of delRival) lineas.push(`${min(e)} ${NOMBRE_TIPO[e.tipo]}`);
+    lineas.push('');
+  }
+
+  const tarjetas = eventos.filter((e) => e.tipo === 'amarilla' || e.tipo === 'roja');
+  if (tarjetas.length) {
+    lineas.push('*TARJETAS*');
+    for (const e of tarjetas) {
+      const quien = e.equipo === 'rival' ? m.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : CLUB);
+      lineas.push(`${min(e)} ${e.tipo === 'roja' ? '🟥' : '🟨'} ${quien}`);
+    }
+    lineas.push('');
+  }
+
+  if (!puntos.length && !tarjetas.length) lineas.push('Sin acciones cargadas.');
+  return lineas.join('\n').trim();
+}
+
 app.get(
   '/api/matches/:id/export',
   auth,
   wrap((req, res) => {
-    const texto = textoExport(Number(req.params.id));
-    if (texto === null) return res.status(404).json({ error: 'Partido no encontrado' });
-    res.json({ texto });
+    const id = Number(req.params.id);
+    const plantel = textoExport(id);
+    if (plantel === null) return res.status(404).json({ error: 'Partido no encontrado' });
+    res.json({ texto: plantel, plantel, resumen: textoResumen(id) });
   })
 );
 

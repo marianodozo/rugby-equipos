@@ -64,6 +64,44 @@ CREATE INDEX IF NOT EXISTS idx_players_apellido ON players(apellido);
 CREATE INDEX IF NOT EXISTS idx_matches_fecha ON matches(fecha_hora);
 `);
 
+/* ---------------------------------------------------------- migraciones */
+// Agregan columnas nuevas sin tocar los datos existentes.
+
+function columnas(tabla) {
+  return db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name);
+}
+function agregarColumna(tabla, nombre, ddl) {
+  if (!columnas(tabla).includes(nombre)) {
+    db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${nombre} ${ddl}`);
+    console.log(`[db] migración: ${tabla}.${nombre}`);
+  }
+}
+
+// Seguimiento en vivo del partido
+agregarColumna('matches', 'estado', "TEXT NOT NULL DEFAULT 'programado'"); // programado | en_curso | finalizado
+agregarColumna('matches', 'periodo', 'INTEGER NOT NULL DEFAULT 0');        // 0 sin empezar, 1, 2, 3 terminado
+agregarColumna('matches', 'reloj_corriendo', 'INTEGER NOT NULL DEFAULT 0');
+agregarColumna('matches', 'reloj_base_seg', 'INTEGER NOT NULL DEFAULT 0'); // segundos acumulados del período
+agregarColumna('matches', 'reloj_desde', 'INTEGER');                       // epoch ms desde que corre (o NULL)
+agregarColumna('matches', 'primer_tiempo_seg', 'INTEGER NOT NULL DEFAULT 0');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS match_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id   INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  tipo       TEXT NOT NULL,      -- try | conversion | penal | drop | try_penal | amarilla | roja
+  equipo     TEXT NOT NULL,      -- nosotros | rival
+  player_id  INTEGER REFERENCES players(id) ON DELETE SET NULL,
+  puntos     INTEGER NOT NULL DEFAULT 0,
+  periodo    INTEGER NOT NULL,
+  segundos   INTEGER NOT NULL,   -- segundos jugados dentro del período
+  t_abs      INTEGER NOT NULL,   -- segundos jugados desde el inicio del partido
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_events_match ON match_events(match_id, t_abs);
+`);
+
 // Usuario inicial
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {

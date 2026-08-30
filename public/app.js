@@ -24,6 +24,20 @@ const POSICIONES = {
 };
 const posicion = (n) => POSICIONES[n] || '';
 
+/* Formas de sumar puntos y su valor */
+const TIPOS_PUNTO = [
+  { k: 'try', n: 'Try', p: 5 },
+  { k: 'conversion', n: 'Conversión', p: 2 },
+  { k: 'penal', n: 'Penal', p: 3 },
+  { k: 'drop', n: 'Drop', p: 3 },
+  { k: 'try_penal', n: 'Try penal', p: 7 },
+];
+const NOMBRE_TIPO = {
+  try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
+  try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
+};
+const DUR_AMARILLA = 600;
+
 /* Nombre del club: se muestra en el login y encabeza el texto de WhatsApp. */
 const CLUB = 'Barceló Rugby';
 
@@ -97,6 +111,7 @@ const ICON = {
   jugadores: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5"/><path d="M17 11.2a3 3 0 100-6M18 14.6c2.2.5 3.6 2.1 3.6 4.4"/></svg>',
   usuarios: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/></svg>',
   buscar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  vivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.2 1.6M9.5 2h5M18.6 5.6l1.4 1.4"/></svg>',
 };
 
 /* ----------------------------------------------------------------- sheet */
@@ -191,6 +206,7 @@ function shell({ titulo, sub, back, acciones = '', contenido, tab, fab }) {
     ${fab ? `<button class="fab" data-fab aria-label="Agregar">+</button>` : ''}
     <nav class="nav">
       <a href="#/partidos" class="${tab === 'partidos' ? 'on' : ''}">${ICON.partidos}Partidos</a>
+      <a href="#/vivo" class="${tab === 'vivo' ? 'on' : ''}">${ICON.vivo}En vivo</a>
       <a href="#/jugadores" class="${tab === 'jugadores' ? 'on' : ''}">${ICON.jugadores}Jugadores</a>
       <a href="#/usuarios" class="${tab === 'usuarios' ? 'on' : ''}">${ICON.usuarios}Usuarios</a>
     </nav>
@@ -203,15 +219,23 @@ function shell({ titulo, sub, back, acciones = '', contenido, tab, fab }) {
 
 async function viewPartidos() {
   const ms = await api('/matches');
-  const proximos = ms.filter((m) => esFuturo(m.fecha_hora));
-  const pasados = ms.filter((m) => !esFuturo(m.fecha_hora));
+  const enCurso = ms.filter((m) => m.estado === 'en_curso');
+  const terminados = ms.filter((m) => m.estado === 'finalizado');
+  const resto = ms.filter((m) => m.estado !== 'en_curso' && m.estado !== 'finalizado');
+  const proximos = resto.filter((m) => esFuturo(m.fecha_hora));
+  const viejos = resto.filter((m) => !esFuturo(m.fecha_hora));
+  const anteriores = terminados.concat(viejos)
+    .sort((a, b) => String(b.fecha_hora).localeCompare(String(a.fecha_hora)));
 
-  const tarjeta = (m) => `
-    <div class="card tap" data-id="${m.id}">
+  const tarjeta = (m, vivo) => `
+    <div class="card tap ${vivo ? 'vivo' : ''}" data-id="${m.id}" data-vivo="${vivo ? 1 : 0}">
       <div class="row">
         <span class="chip ${m.equipo === 'B' ? 'b' : ''}">Equipo ${m.equipo}</span>
+        ${vivo ? '<span class="chip vivo-chip">● EN VIVO</span>' : ''}
         <div class="grow"></div>
-        <span class="muted">${m.cargados}/25</span>
+        ${m.estado === 'finalizado' || vivo
+          ? `<span class="marcador-mini">${m.puntos_nosotros} - ${m.puntos_rival}</span>`
+          : `<span class="muted">${m.cargados}/25</span>`}
       </div>
       <div style="font-weight:650;font-size:17px;margin:7px 0 2px" class="trunc">vs ${esc(m.rival)}</div>
       <div class="muted trunc">${fechaCorta(m.fecha_hora)}${m.lugar ? ' · ' + esc(m.lugar) : ''}</div>
@@ -219,8 +243,9 @@ async function viewPartidos() {
 
   const contenido = !ms.length
     ? `<div class="empty">Todavía no hay partidos.<br>Tocá el botón + para crear el primero.</div>`
-    : `${proximos.length ? `<div class="sec-title">Próximos</div>${proximos.map(tarjeta).join('')}` : ''}
-       ${pasados.length ? `<div class="sec-title">Anteriores</div>${pasados.map(tarjeta).join('')}` : ''}`;
+    : `${enCurso.length ? `<div class="sec-title">En juego</div>${enCurso.map((m) => tarjeta(m, true)).join('')}` : ''}
+       ${proximos.length ? `<div class="sec-title">Próximos</div>${proximos.map((m) => tarjeta(m)).join('')}` : ''}
+       ${anteriores.length ? `<div class="sec-title">Anteriores</div>${anteriores.map((m) => tarjeta(m)).join('')}` : ''}`;
 
   shell({
     titulo: 'Partidos',
@@ -234,7 +259,9 @@ async function viewPartidos() {
   $('[data-fab]').onclick = () => formPartido();
   $('[data-menu]').onclick = () => menuCuenta();
   app.querySelectorAll('[data-id]').forEach((el) => {
-    el.onclick = () => { location.hash = '#/partido/' + el.dataset.id; };
+    el.onclick = () => {
+      location.hash = (el.dataset.vivo === '1' ? '#/vivo/' : '#/partido/') + el.dataset.id;
+    };
   });
 }
 
@@ -320,12 +347,15 @@ async function viewPartido(id) {
     </div>
     <button class="btn" data-agregar>+ Agregar jugador</button>
     <div style="height:10px"></div>
+    <button class="btn sec" data-vivo>${m.estado === 'finalizado' ? 'Ver el partido jugado' : m.estado === 'en_curso' ? '● Seguir en vivo' : '▶ Seguir el partido en vivo'}</button>
+    <div style="height:10px"></div>
     <button class="btn sec" data-exportar>Exportar para WhatsApp</button>
     ${bloques}`;
 
   shell({
     titulo: `Equipo ${m.equipo} vs ${m.rival}`,
-    sub: fechaCorta(m.fecha_hora) + (m.lugar ? ' · ' + m.lugar : ''),
+    sub: (m.estado === 'finalizado' ? 'Final · ' : m.estado === 'en_curso' ? 'En juego · ' : '') +
+         fechaCorta(m.fecha_hora) + (m.lugar ? ' · ' + m.lugar : ''),
     back: true,
     contenido,
     tab: 'partidos',
@@ -335,6 +365,7 @@ async function viewPartido(id) {
   const refrescar = (roster) => { m.roster = roster; viewPartidoRepintar(m); };
 
   $('[data-agregar]').onclick = () => abrirSelector(m, siguienteLibre(m), refrescar, true);
+  $('[data-vivo]').onclick = () => { location.hash = '#/vivo/' + m.id; };
   $('[data-exportar]').onclick = () => exportar(m.id);
   $('[data-menu]').onclick = () => menuPartido(m);
 
@@ -542,32 +573,49 @@ function menuPartido(m) {
 
 /* ------------------------------------------------------------- exportar */
 
-async function exportar(id) {
-  const { texto } = await api(`/matches/${id}/export`);
-  openSheet('Listado para WhatsApp', `
-    <div class="export-box" id="tx">${esc(texto)}</div>
+async function exportar(id, cual = 'plantel') {
+  const datos = await api(`/matches/${id}/export`);
+  let actual = cual;
+
+  const w = openSheet('Mandar por WhatsApp', `
+    <div class="segmento" style="margin-bottom:12px">
+      <button data-v="plantel">Plantel</button>
+      <button data-v="resumen">Resumen</button>
+    </div>
+    <div class="export-box" id="tx"></div>
     <div style="height:12px"></div>
     <button class="btn" data-wa>Enviar por WhatsApp</button>
     <div style="height:8px"></div>
     <button class="btn sec" data-copy>Copiar texto</button>
   `, (w) => {
+    const caja = w.querySelector('#tx');
+    const texto = () => datos[actual] || '';
+    const pintar = () => {
+      caja.textContent = texto();
+      w.querySelectorAll('[data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === actual));
+    };
+    w.querySelectorAll('[data-v]').forEach((b) => {
+      b.onclick = () => { actual = b.dataset.v; pintar(); };
+    });
     w.querySelector('[data-wa]').onclick = () => {
-      window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+      window.open('https://wa.me/?text=' + encodeURIComponent(texto()), '_blank');
     };
     w.querySelector('[data-copy]').onclick = async () => {
       try {
-        await navigator.clipboard.writeText(texto);
+        await navigator.clipboard.writeText(texto());
         toast('Copiado');
       } catch {
         const r = document.createRange();
-        r.selectNode(w.querySelector('#tx'));
+        r.selectNode(caja);
         getSelection().removeAllRanges();
         getSelection().addRange(r);
         document.execCommand('copy');
         toast('Copiado');
       }
     };
+    pintar();
   });
+  return w;
 }
 
 /* ------------------------------------------------------------ jugadores */
@@ -751,15 +799,392 @@ function menuCuenta() {
   });
 }
 
+/* --------------------------------------------------------- partido en vivo */
+
+let TICK = null, POLL = null, WAKE = null;
+let VIVO = null;         // último estado traído del servidor
+let LADO = 'nosotros';   // equipo elegido en los botones de puntos
+let ELEGIR_PARTIDO = false;
+
+function pararTimers() {
+  if (TICK) { clearInterval(TICK); TICK = null; }
+  if (POLL) { clearInterval(POLL); POLL = null; }
+  if (WAKE) { try { WAKE.release(); } catch (e) {} WAKE = null; }
+}
+
+function mmss(seg) {
+  seg = Math.max(0, Math.floor(seg));
+  return `${String(Math.floor(seg / 60)).padStart(2, '0')}:${String(seg % 60).padStart(2, '0')}`;
+}
+
+// Segundos del período, calculados contra el reloj del servidor
+function segundosActuales(v) {
+  const p = v.partido;
+  const desfase = v.recibido - v.ahora;
+  const extra = p.reloj_corriendo && p.reloj_desde
+    ? Math.floor((Date.now() - desfase - p.reloj_desde) / 1000)
+    : 0;
+  return p.reloj_base_seg + extra;
+}
+function absActual(v) {
+  return (v.partido.periodo >= 2 ? v.partido.primer_tiempo_seg : 0) + segundosActuales(v);
+}
+function nombrePeriodo(p) {
+  return p.periodo === 0 ? 'Sin comenzar'
+    : p.periodo === 1 ? '1er tiempo'
+    : p.periodo === 2 ? '2do tiempo' : 'Final';
+}
+function minutoDe(e) { return Math.floor(e.t_abs / 60) + 1; }
+function nombreCorto() { return CLUB.split(' ')[0]; }
+
+async function pedirWakeLock() {
+  try {
+    if ('wakeLock' in navigator) WAKE = await navigator.wakeLock.request('screen');
+  } catch (e) { /* no pasa nada si el navegador no lo permite */ }
+}
+
+/* ------------------------------------------------------------- vista */
+
+async function viewVivo(id) {
+  const partidos = await api('/matches');
+  if (ELEGIR_PARTIDO) { ELEGIR_PARTIDO = false; return elegirPartidoVivo(partidos); }
+  if (!id) {
+    const enCurso = partidos.find((m) => m.estado === 'en_curso');
+    if (enCurso) id = enCurso.id;
+  }
+  if (!id) return elegirPartidoVivo(partidos);
+
+  const [v, det] = await Promise.all([api('/matches/' + id + '/vivo'), api('/matches/' + id)]);
+  v.recibido = Date.now();
+  v.roster = det.roster;
+  VIVO = v;
+  pintarVivo();
+  TICK = setInterval(tickVivo, 1000);
+  POLL = setInterval(sincronizar, 8000);
+  pedirWakeLock();
+}
+
+function elegirPartidoVivo(partidos) {
+  const candidatos = partidos.filter((m) => m.estado !== 'finalizado');
+  shell({
+    titulo: 'En vivo',
+    sub: 'Seguimiento del partido',
+    tab: 'vivo',
+    contenido: candidatos.length
+      ? `<div class="sec-title">Elegí el partido a seguir</div>` + candidatos.map((m) => `
+          <div class="card tap" data-ir="${m.id}">
+            <div class="row">
+              <span class="chip ${m.equipo === 'B' ? 'b' : ''}">Equipo ${m.equipo}</span>
+              <div class="grow"></div>
+              <span class="muted">${m.cargados}/25</span>
+            </div>
+            <div style="font-weight:650;font-size:17px;margin:7px 0 2px" class="trunc">vs ${esc(m.rival)}</div>
+            <div class="muted trunc">${fechaCorta(m.fecha_hora)}${m.lugar ? ' · ' + esc(m.lugar) : ''}</div>
+          </div>`).join('')
+      : `<div class="empty">No hay partidos para seguir.<br>Creá uno desde la pestaña Partidos.</div>`,
+  });
+  app.querySelectorAll('[data-ir]').forEach((el) => {
+    el.onclick = () => { location.hash = '#/vivo/' + el.dataset.ir; };
+  });
+}
+
+function firma(v) {
+  return [v.partido.estado, v.partido.periodo, v.partido.reloj_corriendo, v.partido.reloj_base_seg,
+    v.partido.reloj_desde, v.partido.primer_tiempo_seg, v.eventos.length,
+    v.marcador.nosotros, v.marcador.rival].join('|');
+}
+
+async function sincronizar() {
+  if (!VIVO) return;
+  try {
+    const nuevo = await api('/matches/' + VIVO.partido.id + '/vivo');
+    if (firma(nuevo) === firma(VIVO)) { VIVO.ahora = nuevo.ahora; VIVO.recibido = Date.now(); return; }
+    aplicar(nuevo);
+  } catch (e) { /* si se cae la red, seguimos con lo que tenemos */ }
+}
+
+function aplicar(nuevo) {
+  nuevo.recibido = Date.now();
+  nuevo.roster = VIVO ? VIVO.roster : [];
+  VIVO = nuevo;
+  pintarVivo();
+}
+
+// Solo refresca los números que corren, sin volver a dibujar la pantalla
+function tickVivo() {
+  if (!VIVO) return;
+  const r = $('#reloj');
+  if (r) r.textContent = mmss(segundosActuales(VIVO));
+  const abs = absActual(VIVO);
+  app.querySelectorAll('[data-tarjeta]').forEach((el) => {
+    const t = VIVO.tarjetas.find((x) => String(x.id) === el.dataset.tarjeta);
+    if (!t || t.tipo === 'roja') return;
+    const queda = Math.max(0, DUR_AMARILLA - (abs - VIVO.eventos.find((e) => e.id === t.id).t_abs));
+    el.textContent = queda > 0 ? mmss(queda) : 'cumplida';
+    el.classList.toggle('ok', queda === 0);
+  });
+}
+
+function pintarVivo() {
+  const v = VIVO, p = v.partido;
+  const corriendo = !!p.reloj_corriendo;
+  const terminado = p.estado === 'finalizado';
+  const abs = absActual(v);
+
+  const activas = v.tarjetas.filter((t) => t.tipo === 'roja' || t.restante > 0);
+  const eventos = v.eventos.slice().reverse();
+
+  const botonPeriodo = terminado
+    ? `<button class="btn sec" data-reabrir>Reabrir partido</button>`
+    : p.periodo <= 1
+      ? `<button class="btn sec" data-finperiodo>Fin del 1er tiempo</button>`
+      : `<button class="btn sec" data-finperiodo>Fin del partido</button>`;
+
+  shell({
+    titulo: 'En vivo',
+    sub: `Equipo ${p.equipo} vs ${p.rival}`,
+    tab: 'vivo',
+    acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
+    contenido: `
+      <div class="marcador">
+        <div class="lado">
+          <span class="eq trunc">${esc(nombreCorto())}</span>
+          <span class="pts">${v.marcador.nosotros}</span>
+        </div>
+        <span class="sep">–</span>
+        <div class="lado">
+          <span class="eq trunc">${esc(p.rival)}</span>
+          <span class="pts">${v.marcador.rival}</span>
+        </div>
+      </div>
+
+      <div class="card reloj-card">
+        <div class="row">
+          <span class="chip ${corriendo ? '' : 'b'}">${nombrePeriodo(p)}</span>
+          <div class="grow"></div>
+          <span class="muted">${corriendo ? 'corriendo' : terminado ? 'terminado' : 'detenido'}</span>
+        </div>
+        <div id="reloj" class="reloj ${corriendo ? 'on' : ''}">${mmss(segundosActuales(v))}</div>
+        <div class="two">
+          ${terminado ? '' : `<button class="btn ${corriendo ? 'dan' : ''}" data-toggle>${corriendo ? '⏸ Parar' : '▶ Arrancar'}</button>`}
+          ${botonPeriodo}
+        </div>
+      </div>
+
+      ${activas.length ? `
+        <div class="sec-title">Tarjetas</div>
+        ${activas.map((t) => `
+          <div class="card" style="padding:11px 13px">
+            <div class="row">
+              <span class="tarj ${t.tipo}"></span>
+              <span class="grow trunc">
+                <span style="font-weight:600">${t.equipo === 'rival' ? esc(p.rival) : (t.apellido ? esc(t.apellido + ', ' + t.nombre) : 'Sin jugador')}</span>
+                <span class="muted" style="display:block">${t.tipo === 'roja' ? 'Expulsado' : 'Amarilla'} · min ${t.minuto}</span>
+              </span>
+              <span class="cuenta ${t.tipo === 'roja' ? 'ok' : ''}" data-tarjeta="${t.id}">${t.tipo === 'roja' ? 'expulsado' : mmss(t.restante)}</span>
+            </div>
+          </div>`).join('')}` : ''}
+
+      <div class="sec-title">Cargar</div>
+      <div class="segmento">
+        <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreCorto())}</button>
+        <button data-lado="rival" class="${LADO === 'rival' ? 'on' : ''}">${esc(p.rival)}</button>
+      </div>
+      <div class="grid-puntos">
+        ${TIPOS_PUNTO.map((t) => `
+          <button class="btn punto" data-punto="${t.k}">
+            <span>${t.n}</span><small>+${t.p}</small>
+          </button>`).join('')}
+        <button class="btn punto tarjeta" data-tarj>
+          <span>Tarjeta</span><small>🟨 🟥</small>
+        </button>
+      </div>
+
+      <div class="sec-title">Cronología</div>
+      ${eventos.length ? eventos.map((e) => `
+        <div class="card evento" style="padding:10px 12px">
+          <div class="row">
+            <span class="min">${minutoDe(e)}'</span>
+            <span class="grow trunc">
+              <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo])}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
+              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreCorto()))}</span>
+            </span>
+            <button class="x" data-borrar="${e.id}" aria-label="Borrar">&times;</button>
+          </div>
+        </div>`).join('') : '<div class="muted" style="padding:4px 6px 12px">Todavía no se cargó nada.</div>'}
+
+      <div style="height:6px"></div>
+      <button class="btn sec" data-resumen>Exportar resumen</button>
+      <div style="height:8px"></div>
+      <button class="btn sec" data-plantel>Ver el plantel</button>
+    `,
+  });
+
+  const tog = $('[data-toggle]');
+  if (tog) tog.onclick = () => accionReloj(corriendo ? 'pausar' : 'iniciar');
+  const fp = $('[data-finperiodo]');
+  if (fp) fp.onclick = () => confirmar(
+    p.periodo <= 1 ? '¿Terminar el primer tiempo?' : '¿Terminar el partido?',
+    () => accionReloj('fin_periodo'), 'Sí, terminar');
+  const rab = $('[data-reabrir]');
+  if (rab) rab.onclick = () => accionReloj('reabrir');
+
+  app.querySelectorAll('[data-lado]').forEach((b) => {
+    b.onclick = () => { LADO = b.dataset.lado; pintarVivo(); };
+  });
+  app.querySelectorAll('[data-punto]').forEach((b) => {
+    b.onclick = () => tocarPunto(b.dataset.punto);
+  });
+  $('[data-tarj]').onclick = () => sheetTarjeta();
+  app.querySelectorAll('[data-borrar]').forEach((b) => {
+    b.onclick = () => confirmar('¿Borrar esta acción?', async () => {
+      aplicar(await api(`/matches/${p.id}/eventos/${b.dataset.borrar}`, { method: 'DELETE' }));
+      toast('Borrado');
+    });
+  });
+  $('[data-resumen]').onclick = () => exportar(p.id, 'resumen');
+  $('[data-plantel]').onclick = () => { location.hash = '#/partido/' + p.id; };
+  $('[data-menu]').onclick = () => menuVivo();
+}
+
+/* ------------------------------------------------------------ acciones */
+
+async function accionReloj(accion, extra = {}) {
+  try {
+    aplicar(await api(`/matches/${VIVO.partido.id}/reloj`, { method: 'POST', body: { accion, ...extra } }));
+  } catch (err) { toast(err.message, true); }
+}
+
+async function cargarEvento(tipo, equipo, playerId) {
+  try {
+    aplicar(await api(`/matches/${VIVO.partido.id}/eventos`, {
+      method: 'POST', body: { tipo, equipo, player_id: playerId || null },
+    }));
+    toast(`${NOMBRE_TIPO[tipo]} cargado`);
+  } catch (err) { toast(err.message, true); }
+}
+
+function tocarPunto(tipo) {
+  if (LADO === 'rival') return cargarEvento(tipo, 'rival', null);
+  elegirJugadorVivo(`${NOMBRE_TIPO[tipo]} · ¿quién?`, (pid) => cargarEvento(tipo, 'nosotros', pid));
+}
+
+function sheetTarjeta() {
+  openSheet('Tarjeta', `
+    <button class="btn sec" data-t="amarilla-nosotros">🟨 Amarilla · ${esc(nombreCorto())}</button><div style="height:8px"></div>
+    <button class="btn sec" data-t="roja-nosotros">🟥 Roja · ${esc(nombreCorto())}</button><div style="height:8px"></div>
+    <button class="btn sec" data-t="amarilla-rival">🟨 Amarilla · ${esc(VIVO.partido.rival)}</button><div style="height:8px"></div>
+    <button class="btn sec" data-t="roja-rival">🟥 Roja · ${esc(VIVO.partido.rival)}</button>
+  `, (w) => {
+    w.querySelectorAll('[data-t]').forEach((b) => {
+      b.onclick = () => {
+        const [tipo, equipo] = b.dataset.t.split('-');
+        closeSheet();
+        if (equipo === 'rival') return cargarEvento(tipo, 'rival', null);
+        elegirJugadorVivo(`${NOMBRE_TIPO[tipo]} · ¿a quién?`, (pid) => cargarEvento(tipo, 'nosotros', pid));
+      };
+    });
+  });
+}
+
+// Selector rápido: primero los del plantel (por número), con buscador
+async function elegirJugadorVivo(titulo, onPick) {
+  let lista = (VIVO.roster || []).map((r) => ({ ...r, id: r.player_id, numero: r.numero }));
+  if (!lista.length) {
+    if (!CACHE_JUGADORES) CACHE_JUGADORES = await api('/players');
+    lista = CACHE_JUGADORES.map((p) => ({ ...p, numero: null }));
+  }
+
+  const w = openSheet(titulo, `<ul class="plist" id="lista"></ul>`, null, {
+    alta: true,
+    sticky: `<div class="search">${ICON.buscar}
+      <input id="q" placeholder="Buscar o dejar sin jugador" autocomplete="off" enterkeyhint="done">
+    </div>`,
+  });
+  const input = w.querySelector('#q');
+  const cont = w.querySelector('#lista');
+
+  const pintar = () => {
+    const q = norm(input.value.trim());
+    const items = q
+      ? lista.filter((p) => norm(p.apellido).includes(q) || norm(p.nombre).includes(q) ||
+          norm(p.apodo).includes(q) || String(p.numero || '') === q)
+      : lista;
+    cont.innerHTML =
+      `<li data-sin style="border-bottom:1px solid var(--line)">
+         <span class="ini" style="background:var(--line);color:var(--txt-2)">—</span>
+         <span class="grow" style="font-weight:600">Sin jugador</span>
+       </li>` +
+      items.map((p) => `
+        <li data-p="${p.id}">
+          <span class="ini">${p.numero ? p.numero : esc(iniciales(p))}</span>
+          <span class="grow trunc">
+            <span style="font-weight:600">${esc(nombreCompleto(p))}</span>
+            <span class="muted trunc" style="display:block">${p.apodo ? esc(p.apodo) + ' · ' : ''}${p.numero ? posicion(p.numero) : 'Fuera del plantel'}</span>
+          </span>
+        </li>`).join('');
+    cont.querySelector('[data-sin]').onclick = () => { closeSheet(); onPick(null); };
+    cont.querySelectorAll('[data-p]').forEach((li) => {
+      li.onclick = () => { closeSheet(); onPick(Number(li.dataset.p)); };
+    });
+  };
+  input.addEventListener('input', pintar);
+  pintar();
+  setTimeout(() => input.focus(), 120);
+}
+
+function menuVivo() {
+  const p = VIVO.partido;
+  openSheet('Opciones del seguimiento', `
+    <button class="btn sec" data-a="ajustar">Corregir el reloj</button><div style="height:8px"></div>
+    <button class="btn sec" data-a="finalizar">Dar por finalizado</button><div style="height:8px"></div>
+    <button class="btn sec" data-a="cambiar">Seguir otro partido</button><div style="height:8px"></div>
+    <button class="btn dan" data-a="reiniciar">Reiniciar el seguimiento</button>
+  `, (w) => {
+    w.querySelectorAll('[data-a]').forEach((b) => {
+      b.onclick = () => {
+        const a = b.dataset.a;
+        closeSheet();
+        if (a === 'finalizar') return confirmar('¿Dar el partido por finalizado?', () => accionReloj('finalizar'), 'Sí, finalizar');
+        if (a === 'cambiar') { VIVO = null; ELEGIR_PARTIDO = true; location.hash = '#/vivo'; return router(); }
+        if (a === 'reiniciar') return confirmar(
+          'Vuelve el reloj a cero y el partido a "sin comenzar". Las acciones cargadas NO se borran.',
+          () => accionReloj('reiniciar'), 'Sí, reiniciar');
+        if (a === 'ajustar') {
+          const seg = segundosActuales(VIVO);
+          openSheet('Corregir el reloj', `
+            <p class="muted" style="margin-top:0">Minutos y segundos jugados del ${nombrePeriodo(p).toLowerCase()}.</p>
+            <div class="two">
+              <div><label>Minutos</label><input id="mm" type="number" min="0" max="120" value="${Math.floor(seg / 60)}"></div>
+              <div><label>Segundos</label><input id="ss" type="number" min="0" max="59" value="${seg % 60}"></div>
+            </div>
+            <div style="height:18px"></div>
+            <button class="btn" data-ok>Guardar</button>
+          `, (w2) => {
+            w2.querySelector('[data-ok]').onclick = () => {
+              const s = (Number(w2.querySelector('#mm').value) || 0) * 60 + (Number(w2.querySelector('#ss').value) || 0);
+              closeSheet();
+              accionReloj('ajustar', { segundos: s });
+            };
+          });
+        }
+      };
+    });
+  });
+}
+
 /* ------------------------------------------------------------------ router */
 
 async function router() {
+  pararTimers();
   if (!ME) {
     try { ME = (await api('/me')).user; }
     catch { return renderLogin(); }
   }
   const h = location.hash || '#/partidos';
   try {
+    if (h.startsWith('#/vivo/')) return await viewVivo(h.split('/')[2]);
+    if (h.startsWith('#/vivo')) return await viewVivo();
     if (h.startsWith('#/partido/')) return await viewPartido(h.split('/')[2]);
     if (h.startsWith('#/jugadores')) return await viewJugadores();
     if (h.startsWith('#/usuarios')) return await viewUsuarios();
