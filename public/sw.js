@@ -1,6 +1,6 @@
 /* Service worker mínimo: cachea el shell para que la app abra rápido.
    Las llamadas a /api/ NUNCA se cachean (siempre datos frescos). */
-const CACHE = 'equipos-v5';
+const CACHE = 'equipos-v6';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.json', '/logo.png', '/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -17,8 +17,12 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
+  // El código de la app se pide siempre a la red saltando la caché HTTP del
+  // navegador: si no, una copia vieja guardada con max-age puede tapar un
+  // deploy nuevo aunque el servidor ya tenga la versión buena.
+  const esCodigo = /\.(html|js|css|json|webmanifest)$/i.test(url.pathname) || e.request.mode === 'navigate';
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, esCodigo ? { cache: 'no-store' } : undefined)
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
