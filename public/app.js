@@ -35,7 +35,16 @@ const TIPOS_PUNTO = [
 const NOMBRE_TIPO = {
   try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
+  infraccion: 'Penal cometido',
 };
+
+/* Tipos de penal que comete el equipo. Para cambiarlos, editá solo esta lista:
+   lo que figura acá es lo que se guarda y lo que sale en el resumen. */
+const TIPOS_PENAL = [
+  'Offside', 'No soltar', 'No rolar', 'Manos en el ruck',
+  'Entrada al costado', 'Tackle alto', 'Juego peligroso', 'Obstrucción',
+  'Scrum', 'Line', 'Antideportivo', 'Otro',
+];
 const DUR_AMARILLA = 600;
 
 /* Nombre del club: se muestra en el login y encabeza el texto de WhatsApp. */
@@ -985,6 +994,27 @@ function pintarVivo() {
             </div>
           </div>`).join('')}` : ''}
 
+      ${(v.penales.nosotros || v.penales.rival) ? `
+        <div class="sec-title">Penales cometidos</div>
+        <div class="card">
+          <div class="row">
+            <div class="lado-penal">
+              <span class="muted trunc">${esc(nombreCorto())}</span>
+              <strong>${v.penales.nosotros}</strong>
+            </div>
+            <div class="lado-penal">
+              <span class="muted trunc">${esc(p.rival)}</span>
+              <strong>${v.penales.rival}</strong>
+            </div>
+          </div>
+          ${v.penales.porTipo.length ? `<div class="progreso" style="margin:12px 0 0">
+            ${v.penales.porTipo.map(([t, n]) => `<span class="chip">${esc(t)} ${n}</span>`).join('')}
+          </div>` : ''}
+          ${v.penales.porJugador.length ? `<div class="muted" style="margin-top:10px">
+            ${v.penales.porJugador.map(([j, n]) => `${esc(j)}: ${n}`).join(' · ')}
+          </div>` : ''}
+        </div>` : ''}
+
       <div class="sec-title">Cargar</div>
       <div class="segmento">
         <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreCorto())}</button>
@@ -995,6 +1025,9 @@ function pintarVivo() {
           <button class="btn punto" data-punto="${t.k}">
             <span>${t.n}</span><small>+${t.p}</small>
           </button>`).join('')}
+        <button class="btn punto tarjeta" data-penal>
+          <span>Penal cometido</span><small>${LADO === 'rival' ? esc(p.rival) : 'elegís el tipo'}</small>
+        </button>
         <button class="btn punto tarjeta" data-tarj>
           <span>Tarjeta</span><small>🟨 🟥</small>
         </button>
@@ -1006,7 +1039,7 @@ function pintarVivo() {
           <div class="row">
             <span class="min">${minutoDe(e)}'</span>
             <span class="grow trunc">
-              <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo])}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
+              <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo])}${e.detalle ? ` <span class="muted">· ${esc(e.detalle)}</span>` : ''}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
               <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreCorto()))}</span>
             </span>
             <button class="x" data-borrar="${e.id}" aria-label="Borrar">&times;</button>
@@ -1036,6 +1069,7 @@ function pintarVivo() {
     b.onclick = () => tocarPunto(b.dataset.punto);
   });
   $('[data-tarj]').onclick = () => sheetTarjeta();
+  $('[data-penal]').onclick = () => tocarPenal();
   app.querySelectorAll('[data-borrar]').forEach((b) => {
     b.onclick = () => confirmar('¿Borrar esta acción?', async () => {
       aplicar(await api(`/matches/${p.id}/eventos/${b.dataset.borrar}`, { method: 'DELETE' }));
@@ -1055,18 +1089,37 @@ async function accionReloj(accion, extra = {}) {
   } catch (err) { toast(err.message, true); }
 }
 
-async function cargarEvento(tipo, equipo, playerId) {
+async function cargarEvento(tipo, equipo, playerId, detalle) {
   try {
     aplicar(await api(`/matches/${VIVO.partido.id}/eventos`, {
-      method: 'POST', body: { tipo, equipo, player_id: playerId || null },
+      method: 'POST', body: { tipo, equipo, player_id: playerId || null, detalle: detalle || null },
     }));
-    toast(`${NOMBRE_TIPO[tipo]} cargado`);
+    toast(detalle ? `${detalle} cargado` : `${NOMBRE_TIPO[tipo]} cargado`);
   } catch (err) { toast(err.message, true); }
 }
 
 function tocarPunto(tipo) {
   if (LADO === 'rival') return cargarEvento(tipo, 'rival', null);
   elegirJugadorVivo(`${NOMBRE_TIPO[tipo]} · ¿quién?`, (pid) => cargarEvento(tipo, 'nosotros', pid));
+}
+
+// Penal cometido: del rival se cuenta y listo; el nuestro pide tipo y jugador
+function tocarPenal() {
+  if (LADO === 'rival') return cargarEvento('infraccion', 'rival', null);
+  openSheet('¿Qué penal fue?', `
+    <div class="grid-penales">
+      ${TIPOS_PENAL.map((t) => `<button class="btn sec" data-tp="${esc(t)}">${esc(t)}</button>`).join('')}
+    </div>
+  `, (w) => {
+    w.querySelectorAll('[data-tp]').forEach((b) => {
+      b.onclick = () => {
+        const detalle = b.dataset.tp;
+        closeSheet();
+        elegirJugadorVivo(`${detalle} · ¿quién?`, (pid) =>
+          cargarEvento('infraccion', 'nosotros', pid, detalle));
+      };
+    });
+  });
 }
 
 function sheetTarjeta() {

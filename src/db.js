@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS match_events (
 CREATE INDEX IF NOT EXISTS idx_events_match ON match_events(match_id, t_abs);
 `);
 
+// Penales cometidos: el subtipo (offside, no rolar, etc.)
+agregarColumna('match_events', 'detalle', 'TEXT');
+
 // Usuario inicial
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {

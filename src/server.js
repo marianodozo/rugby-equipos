@@ -518,10 +518,11 @@ app.post(
 
 /* ------------------------------------------------- seguimiento en vivo */
 
-const PUNTOS = { try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7, amarilla: 0, roja: 0 };
+const PUNTOS = { try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7, amarilla: 0, roja: 0, infraccion: 0 };
 const NOMBRE_TIPO = {
   try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
+  infraccion: 'Penal cometido',
 };
 const DUR_AMARILLA = 600; // 10 minutos de juego
 
@@ -572,6 +573,24 @@ function vivoDe(matchId) {
       restante: e.tipo === 'roja' ? null : Math.max(0, DUR_AMARILLA - (ahoraAbs - e.t_abs)),
     }));
 
+  const infracciones = eventos.filter((e) => e.tipo === 'infraccion');
+  const porTipo = {};
+  const porJugador = {};
+  for (const e of infracciones.filter((e) => e.equipo !== 'rival')) {
+    const t = e.detalle || 'Sin especificar';
+    porTipo[t] = (porTipo[t] || 0) + 1;
+    if (e.player_id) {
+      const k = `${e.apellido}, ${e.nombre}`;
+      porJugador[k] = (porJugador[k] || 0) + 1;
+    }
+  }
+  const penales = {
+    nosotros: infracciones.filter((e) => e.equipo !== 'rival').length,
+    rival: infracciones.filter((e) => e.equipo === 'rival').length,
+    porTipo: Object.entries(porTipo).sort((a, b) => b[1] - a[1]),
+    porJugador: Object.entries(porJugador).sort((a, b) => b[1] - a[1]),
+  };
+
   return {
     partido: {
       id: m.id, equipo: m.equipo, rival: m.rival, lugar: m.lugar,
@@ -585,6 +604,7 @@ function vivoDe(matchId) {
     marcador,
     eventos,
     tarjetas,
+    penales,
   };
 }
 
@@ -683,10 +703,15 @@ app.post(
       ? segundosPeriodo(m)
       : Math.max(0, Math.min(7200, Number(req.body.segundos)));
 
+    // Para los penales cometidos guardamos además el tipo de infracción
+    const detalle = tipo === 'infraccion' && equipo !== 'rival'
+      ? String(clean(req.body.detalle || '')).slice(0, 40) || null
+      : null;
+
     db.prepare(
-      `INSERT INTO match_events (match_id, tipo, equipo, player_id, puntos, periodo, segundos, t_abs, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, tipo, equipo, playerId, PUNTOS[tipo], periodo, seg, absoluto(m, periodo, seg), req.user.id);
+      `INSERT INTO match_events (match_id, tipo, equipo, player_id, puntos, periodo, segundos, t_abs, detalle, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, tipo, equipo, playerId, PUNTOS[tipo], periodo, seg, absoluto(m, periodo, seg), detalle, req.user.id);
 
     res.status(201).json(vivoDe(id));
   })
@@ -780,6 +805,29 @@ function textoResumen(matchId) {
     lineas.push('');
   }
 
+  const infracciones = eventos.filter((e) => e.tipo === 'infraccion');
+  const nuestras = infracciones.filter((e) => e.equipo !== 'rival');
+  if (infracciones.length) {
+    lineas.push(`*PENALES COMETIDOS*  ${CLUB.split(' ')[0]} ${nuestras.length} · ${m.rival} ${infracciones.length - nuestras.length}`);
+    const porTipo = {};
+    const porJugador = {};
+    for (const e of nuestras) {
+      const t = e.detalle || 'Sin especificar';
+      porTipo[t] = (porTipo[t] || 0) + 1;
+      if (e.apellido) {
+        const k = `${e.nombre} ${e.apellido}`;
+        porJugador[k] = (porJugador[k] || 0) + 1;
+      }
+    }
+    const orden = (o) => Object.entries(o).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (nuestras.length) {
+      lineas.push(orden(porTipo).map(([t, n]) => `${t}: ${n}`).join(' · '));
+      const jug = orden(porJugador);
+      if (jug.length) lineas.push('Por jugador — ' + jug.map(([j, n]) => `${j}: ${n}`).join(' · '));
+    }
+    lineas.push('');
+  }
+
   const tarjetas = eventos.filter((e) => e.tipo === 'amarilla' || e.tipo === 'roja');
   if (tarjetas.length) {
     lineas.push('*TARJETAS*');
@@ -790,7 +838,7 @@ function textoResumen(matchId) {
     lineas.push('');
   }
 
-  if (!puntos.length && !tarjetas.length) lineas.push('Sin acciones cargadas.');
+  if (!puntos.length && !tarjetas.length && !infracciones.length) lineas.push('Sin acciones cargadas.');
   return lineas.join('\n').trim();
 }
 

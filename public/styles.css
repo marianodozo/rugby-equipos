@@ -303,3 +303,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 .card.vivo { border-color: var(--acento); }
 .chip.vivo-chip { background: var(--acento); color: #fff; letter-spacing: .04em; }
 .marcador-mini { font-weight: 750; font-size: 18px; font-variant-numeric: tabular-nums; }
+
+.lado-penal { flex: 1; min-width: 0; text-align: center; }
+.lado-penal strong { display: block; font-size: 30px; font-weight: 750; line-height: 1.15; }
+.grid-penales { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid-penales .btn { min-height: 56px; font-size: 15px; }

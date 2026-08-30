@@ -67,6 +67,13 @@ La pestaña **En vivo** sigue el partido desde la cancha:
 - **Tarjetas**: amarilla y roja, nuestras o del rival. La amarilla muestra
   cuánto le queda de los 10 minutos, contando **tiempo de juego**: si el reloj
   está parado, la sanción no corre.
+- **Penales cometidos**: los que comete el equipo, con el tipo de infracción
+  (offside, no soltar, no rolar, manos en el ruck, entrada al costado, tackle
+  alto, juego peligroso, obstrucción, scrum, line, antideportivo, otro) y el
+  jugador. Del rival se cuenta la cantidad, sin tipo ni jugador. Arriba de los
+  botones queda el contador: total de cada lado, desglose por tipo y por
+  jugador. La lista de tipos se cambia en la constante `TIPOS_PENAL` de
+  `public/app.js`.
 - **Cronología**: todo lo cargado con su minuto, y una X para borrar lo que se
   cargó mal.
 - La pantalla se refresca sola cada 8 segundos, así que dos personas pueden
@@ -77,7 +84,8 @@ Los estados del partido son **programado → en curso → finalizado**. En la li
 de Partidos, los que están en juego aparecen arriba con el marcador en vivo, y
 los terminados quedan en *Anteriores* con el resultado. Desde cualquiera de los
 dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
-**Resumen** (resultado, quién hizo los puntos y las tarjetas).
+**Resumen** (resultado, quién hizo los puntos, los penales cometidos y las
+tarjetas).
 
 ### Identidad del club
 
