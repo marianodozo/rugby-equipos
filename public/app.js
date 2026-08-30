@@ -770,10 +770,25 @@ async function router() {
 }
 
 /* Teclado virtual: mantiene los paneles dentro del área visible.
-   Sin esto, en el celular el teclado tapa la lista de jugadores. */
+   Sin esto, en el celular el teclado tapa la lista de jugadores.
+   Importante: anclamos el panel directo al alto/offset real de
+   visualViewport (--vh/--vtop) en vez de restar una diferencia
+   calculada contra window.innerHeight. Esa resta duplicaba la
+   corrección en Chrome porque index.html ya usa
+   "interactive-widget=resizes-content" (el navegador achica solo
+   la ventana), y las dos correcciones peleaban entre sí: al
+   reabrir el buscador con el teclado ya arriba, el panel quedaba
+   con la altura mal calculada y aparecía pegado contra el teclado
+   sin lugar para los resultados. Anclar a vv.height/vv.offsetTop
+   funciona igual haya o no resize nativo, y también en iOS Safari
+   (que ignora ese meta tag).
+   --kb se mantiene solo para el toast, que no necesita tanta
+   precisión. */
 function ajustarTeclado() {
   const vv = window.visualViewport;
   if (!vv) return;
+  document.documentElement.style.setProperty('--vh', vv.height + 'px');
+  document.documentElement.style.setProperty('--vtop', Math.round(vv.offsetTop) + 'px');
   const tapado = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
   document.documentElement.style.setProperty('--kb', Math.round(tapado) + 'px');
 }

@@ -168,9 +168,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 /* ---------------------------------------------------------------- sheet */
 
 .backdrop {
-  /* --kb es lo que ocupa el teclado virtual (lo calcula app.js con visualViewport).
-     Así el panel nunca queda tapado por el teclado. */
-  position: fixed; left: 0; right: 0; top: 0; bottom: var(--kb, 0px);
+  /* --vh/--vtop son el alto y el offset reales del área visible
+     (los calcula app.js con visualViewport). Anclamos ahí en vez
+     de restar el teclado con "bottom", así el panel siempre ocupa
+     el alto visible completo y queda arriba del teclado, la
+     primera vez y también al reabrir el buscador. */
+  position: fixed; left: 0; right: 0;
+  top: var(--vtop, 0px); height: var(--vh, 100dvh);
   background: rgba(0,0,0,.45); z-index: 40;
   display: flex; align-items: flex-end; justify-content: center;
   animation: fade .15s ease;
@@ -184,7 +188,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 }
 /* Panel de búsqueda: ocupa todo el alto visible para que la lista tenga aire */
 .sheet.alta { height: 100%; }
-.sheet.alta .body { flex: 1; }
+/* min-height:0 evita que el item de flex se estire de más por su
+   propio contenido (bug clásico de Chrome/Android con listas cortas
+   dentro de un flex-column) y garantice que .body siempre ocupe el
+   espacio restante, tenga 0 o 50 resultados. */
+.sheet.alta .body { flex: 1; min-height: 0; }
 @keyframes up { from { transform: translateY(30px) } }
 .sheet header {
   padding: 12px 14px 10px; border-bottom: 1px solid var(--line);
