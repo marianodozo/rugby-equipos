@@ -8,7 +8,10 @@ de los bots que ya tenés en el EC2 y consume muy pocos recursos: se despliega c
 ## Qué hace
 
 - **Jugadores**: alta/baja/modificación con DNI, nombre, apellido y apodo. Búsqueda instantánea por apellido, nombre, apodo o DNI.
-- **Partidos**: Equipo A o B, rival, lugar, fecha y hora, notas.
+- **Partidos**: Barceló A o Barceló B, rival, lugar, fecha y hora, notas. En la
+  base se guarda solo la letra; el nombre que se muestra sale de `CLUB_NOMBRE`
+  (servidor) y de la constante `CLUB` de `public/app.js`, así que si cambia el
+  nombre del club cambia en todos lados.
 - **Usuarios**: todos con los mismos permisos. Login con usuario y contraseña, sesión de 90 días (no te pide login cada vez desde el celu).
 - **Armado del plantel**: 25 lugares con **posición fija por número** (1 pilar izquierdo, 2 hooker, 9 medio scrum, 10 apertura, etc.). Cada asignación se guarda al instante, así que podés cargar el equipo en varios momentos, desde varios celulares.
 - **Export a WhatsApp**: genera el listado numerado del 1 al 25 con nombre, apellido y DNI, con botón para copiar o abrir WhatsApp directamente.

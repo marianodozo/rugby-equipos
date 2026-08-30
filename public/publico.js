@@ -41,6 +41,7 @@ function nombrePeriodo(p) {
     : p.periodo === 2 ? '2do tiempo' : 'Final';
 }
 function nombreCorto(club) { return String(club || '').split(' ')[0]; }
+function nombreEquipo(club, letra) { return `${nombreCorto(club)} ${letra}`; }
 
 async function traer() {
   const res = await fetch('/api/publico/' + TOKEN, { cache: 'no-store' });
@@ -59,12 +60,12 @@ function pintar() {
   <div class="app">
     <div class="topbar">
       <img class="marca" src="/logo.png" alt="">
-      <h1 class="trunc">${esc(v.club)}<span class="sub trunc">vs ${esc(p.rival)}${p.lugar ? ' · ' + esc(p.lugar) : ''}</span></h1>
+      <h1 class="trunc">${esc(nombreEquipo(v.club, p.equipo))}<span class="sub trunc">vs ${esc(p.rival)}${p.lugar ? ' · ' + esc(p.lugar) : ''}</span></h1>
     </div>
     <main>
       <div class="marcador">
         <div class="lado">
-          <span class="eq trunc">${esc(nombreCorto(v.club))}</span>
+          <span class="eq trunc">${esc(nombreEquipo(v.club, p.equipo))}</span>
           <span class="pts">${v.marcador.nosotros}</span>
         </div>
         <span class="sep">–</span>
@@ -81,7 +82,7 @@ function pintar() {
           <span class="muted">${p.estado === 'finalizado' ? 'terminado' : corriendo ? 'en juego' : 'detenido'}</span>
         </div>
         <div id="reloj" class="reloj ${corriendo ? 'on' : ''}">${mmss(segundosActuales(v))}</div>
-        <div class="muted">Equipo ${esc(p.equipo)} · ${fechaCorta(p.fecha_hora)}</div>
+        <div class="muted">${fechaCorta(p.fecha_hora)}</div>
       </div>
 
       <div class="sec-title">Cronología</div>
@@ -91,7 +92,7 @@ function pintar() {
             <span class="min">${Math.floor(e.t_abs / 60) + 1}'</span>
             <span class="grow trunc">
               <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo] || e.tipo)}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
-              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreCorto(v.club)))}</span>
+              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreEquipo(v.club, p.equipo)))}</span>
             </span>
           </div>
         </div>`).join('')

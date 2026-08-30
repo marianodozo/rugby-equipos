@@ -239,7 +239,7 @@ async function viewPartidos() {
   const tarjeta = (m, vivo) => `
     <div class="card tap ${vivo ? 'vivo' : ''}" data-id="${m.id}" data-vivo="${vivo ? 1 : 0}">
       <div class="row">
-        <span class="chip ${m.equipo === 'B' ? 'b' : ''}">Equipo ${m.equipo}</span>
+        <span class="chip ${m.equipo === 'B' ? 'b' : ''}">${esc(nombreEquipo(m.equipo))}</span>
         ${vivo ? '<span class="chip vivo-chip">● EN VIVO</span>' : ''}
         <div class="grow"></div>
         ${m.estado === 'finalizado' || vivo
@@ -280,8 +280,8 @@ function formPartido(m) {
     <form id="fp">
       <label>Equipo</label>
       <div class="two">
-        <label style="margin:0"><input type="radio" name="equipo" value="A" ${!m || m.equipo === 'A' ? 'checked' : ''} style="width:auto;margin-right:8px"> Equipo A</label>
-        <label style="margin:0"><input type="radio" name="equipo" value="B" ${m && m.equipo === 'B' ? 'checked' : ''} style="width:auto;margin-right:8px"> Equipo B</label>
+        <label style="margin:0"><input type="radio" name="equipo" value="A" ${!m || m.equipo === 'A' ? 'checked' : ''} style="width:auto;margin-right:8px"> ${esc(nombreEquipo('A'))}</label>
+        <label style="margin:0"><input type="radio" name="equipo" value="B" ${m && m.equipo === 'B' ? 'checked' : ''} style="width:auto;margin-right:8px"> ${esc(nombreEquipo('B'))}</label>
       </div>
       <label>Rival</label>
       <input name="rival" required value="${esc(m ? m.rival : '')}" placeholder="Club rival">
@@ -364,7 +364,7 @@ async function viewPartido(id) {
     ${bloques}`;
 
   shell({
-    titulo: `Equipo ${m.equipo} vs ${m.rival}`,
+    titulo: `${nombreEquipo(m.equipo)} vs ${m.rival}`,
     sub: (m.estado === 'finalizado' ? 'Final · ' : m.estado === 'en_curso' ? 'En juego · ' : '') +
          fechaCorta(m.fecha_hora) + (m.lugar ? ' · ' + m.lugar : ''),
     back: true,
@@ -849,6 +849,8 @@ function nombrePeriodo(p) {
 }
 function minutoDe(e) { return Math.floor(e.t_abs / 60) + 1; }
 function nombreCorto() { return CLUB.split(' ')[0]; }
+// "A" -> "Barceló A": el equipo del club que juega ese partido
+function nombreEquipo(letra) { return `${nombreCorto()} ${letra}`; }
 
 async function pedirWakeLock() {
   try {
@@ -887,7 +889,7 @@ function elegirPartidoVivo(partidos) {
       ? `<div class="sec-title">Elegí el partido a seguir</div>` + candidatos.map((m) => `
           <div class="card tap" data-ir="${m.id}">
             <div class="row">
-              <span class="chip ${m.equipo === 'B' ? 'b' : ''}">Equipo ${m.equipo}</span>
+              <span class="chip ${m.equipo === 'B' ? 'b' : ''}">${esc(nombreEquipo(m.equipo))}</span>
               <div class="grow"></div>
               <span class="muted">${m.cargados}/25</span>
             </div>
@@ -955,13 +957,13 @@ function pintarVivo() {
 
   shell({
     titulo: 'En vivo',
-    sub: `Equipo ${p.equipo} vs ${p.rival}`,
+    sub: `${nombreEquipo(p.equipo)} vs ${p.rival}`,
     tab: 'vivo',
     acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
     contenido: `
       <div class="marcador">
         <div class="lado">
-          <span class="eq trunc">${esc(nombreCorto())}</span>
+          <span class="eq trunc">${esc(nombreEquipo(p.equipo))}</span>
           <span class="pts">${v.marcador.nosotros}</span>
         </div>
         <span class="sep">–</span>
@@ -1003,7 +1005,7 @@ function pintarVivo() {
         <div class="card">
           <div class="row">
             <div class="lado-penal">
-              <span class="muted trunc">${esc(nombreCorto())}</span>
+              <span class="muted trunc">${esc(nombreEquipo(p.equipo))}</span>
               <strong>${v.penales.nosotros}</strong>
             </div>
             <div class="lado-penal">
@@ -1021,7 +1023,7 @@ function pintarVivo() {
 
       <div class="sec-title">Cargar</div>
       <div class="segmento">
-        <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreCorto())}</button>
+        <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreEquipo(p.equipo))}</button>
         <button data-lado="rival" class="${LADO === 'rival' ? 'on' : ''}">${esc(p.rival)}</button>
       </div>
       <div class="grid-puntos">
@@ -1044,7 +1046,7 @@ function pintarVivo() {
             <span class="min">${minutoDe(e)}'</span>
             <span class="grow trunc">
               <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo])}${e.detalle ? ` <span class="muted">· ${esc(e.detalle)}</span>` : ''}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
-              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreCorto()))}</span>
+              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreEquipo(p.equipo)))}</span>
             </span>
             <button class="x" data-borrar="${e.id}" aria-label="Borrar">&times;</button>
           </div>
@@ -1131,8 +1133,8 @@ function tocarPenal() {
 
 function sheetTarjeta() {
   openSheet('Tarjeta', `
-    <button class="btn sec" data-t="amarilla-nosotros">🟨 Amarilla · ${esc(nombreCorto())}</button><div style="height:8px"></div>
-    <button class="btn sec" data-t="roja-nosotros">🟥 Roja · ${esc(nombreCorto())}</button><div style="height:8px"></div>
+    <button class="btn sec" data-t="amarilla-nosotros">🟨 Amarilla · ${esc(nombreEquipo(VIVO.partido.equipo))}</button><div style="height:8px"></div>
+    <button class="btn sec" data-t="roja-nosotros">🟥 Roja · ${esc(nombreEquipo(VIVO.partido.equipo))}</button><div style="height:8px"></div>
     <button class="btn sec" data-t="amarilla-rival">🟨 Amarilla · ${esc(VIVO.partido.rival)}</button><div style="height:8px"></div>
     <button class="btn sec" data-t="roja-rival">🟥 Roja · ${esc(VIVO.partido.rival)}</button>
   `, (w) => {
@@ -1288,14 +1290,14 @@ async function imagenResultado(v) {
   g.fillText(recortar(club.toUpperCase(), 780), 196, 100);
   g.fillStyle = TENUE;
   g.font = `400 30px ${FUENTE}`;
-  g.fillText(recortar(`Equipo ${p.equipo} · ${fechaCorta(p.fecha_hora)}${p.lugar ? ' · ' + p.lugar : ''}`, 800), 196, 146);
+  g.fillText(recortar(`${fechaCorta(p.fecha_hora)}${p.lugar ? ' · ' + p.lugar : ''}`, 800), 196, 146);
 
   // marcador
   const yEq = 300, yPts = 430;
   g.textAlign = 'center';
   g.font = `700 38px ${FUENTE}`;
   g.fillStyle = TENUE;
-  g.fillText(recortar(nombreCorto().toUpperCase(), 400), 280, yEq);
+  g.fillText(recortar(nombreEquipo(p.equipo).toUpperCase(), 400), 280, yEq);
   g.fillText(recortar(String(p.rival).toUpperCase(), 400), 800, yEq);
 
   g.fillStyle = BLANCO;
@@ -1344,7 +1346,7 @@ async function imagenResultado(v) {
     g.fillStyle = BLANCO;
     g.font = `600 32px ${FUENTE}`;
     const quien = nuestro
-      ? (e.apellido ? `${e.nombre} ${e.apellido}` : nombreCorto())
+      ? (e.apellido ? `${e.nombre} ${e.apellido}` : nombreEquipo(p.equipo))
       : p.rival;
     const texto = `${NOMBRE_TIPO[e.tipo] || e.tipo} — ${quien}`;
     g.fillText(recortar(texto, W - 300), 200, y);
@@ -1374,7 +1376,7 @@ async function imagenResultado(v) {
 
 function tituloPartido(v) {
   const p = v.partido;
-  return `${nombreCorto()} ${v.marcador.nosotros} - ${v.marcador.rival} ${p.rival}`;
+  return `${nombreEquipo(p.equipo)} ${v.marcador.nosotros} - ${v.marcador.rival} ${p.rival}`;
 }
 
 async function sheetCompartir(matchId) {
@@ -1447,7 +1449,7 @@ async function sheetCompartir(matchId) {
       <div style="height:8px"></div>
       <button class="btn dan" data-baja>Dar de baja el enlace</button>`;
     cajaEnlace.querySelector('[data-wa]').onclick = () => {
-      const txt = `Seguí en vivo ${nombreCorto()} vs ${p.rival}: ${url}`;
+      const txt = `Seguí en vivo ${nombreEquipo(p.equipo)} vs ${p.rival}: ${url}`;
       window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
     };
     cajaEnlace.querySelector('[data-copiar]').onclick = async () => {

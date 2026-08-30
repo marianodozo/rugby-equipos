@@ -12,6 +12,9 @@ const HOST = process.env.HOST || '127.0.0.1';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 90);
 const SECURE_COOKIE = String(process.env.SECURE_COOKIE || 'true') === 'true';
 const CLUB = process.env.CLUB_NOMBRE || 'Barceló Rugby';
+const CLUB_CORTO = CLUB.split(' ')[0];
+// "A" -> "Barceló A": así se nombra al equipo del club en listados y exports
+const equipoNombre = (letra) => `${CLUB_CORTO} ${letra}`;
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
@@ -812,7 +815,7 @@ function textoExport(matchId) {
   const roster = rosterDe(matchId);
   const lineas = [];
   if (CLUB) lineas.push(CLUB.toUpperCase());
-  lineas.push(`*Equipo ${m.equipo} vs ${m.rival}*`);
+  lineas.push(`*${equipoNombre(m.equipo)} vs ${m.rival}*`);
   lineas.push(fechaLegible(m.fecha_hora));
   if (m.lugar) lineas.push(m.lugar);
   lineas.push('');
@@ -849,8 +852,8 @@ function textoResumen(matchId) {
   const jugador = (e) => (e.apellido ? ` · ${e.nombre} ${e.apellido}` : '');
   const lineas = [];
 
-  lineas.push(`*${CLUB} ${nos} - ${riv} ${m.rival}*`);
-  lineas.push(`Equipo ${m.equipo} · ${fechaLegible(m.fecha_hora)}`);
+  lineas.push(`*${equipoNombre(m.equipo)} ${nos} - ${riv} ${m.rival}*`);
+  lineas.push(fechaLegible(m.fecha_hora));
   if (m.lugar) lineas.push(m.lugar);
   lineas.push(m.estado === 'finalizado' ? 'Final' : m.estado === 'en_curso' ? 'En juego' : 'Sin comenzar');
   lineas.push('');
@@ -860,7 +863,7 @@ function textoResumen(matchId) {
   const delRival = puntos.filter((e) => e.equipo === 'rival');
 
   if (nuestros.length) {
-    lineas.push(`*PUNTOS ${CLUB.toUpperCase()}*`);
+    lineas.push(`*PUNTOS ${equipoNombre(m.equipo).toUpperCase()}*`);
     for (const e of nuestros) lineas.push(`${min(e)} ${NOMBRE_TIPO[e.tipo]}${jugador(e)}`);
     lineas.push('');
   }
@@ -873,7 +876,7 @@ function textoResumen(matchId) {
   const infracciones = eventos.filter((e) => e.tipo === 'infraccion');
   const nuestras = infracciones.filter((e) => e.equipo !== 'rival');
   if (infracciones.length) {
-    lineas.push(`*PENALES COMETIDOS*  ${CLUB.split(' ')[0]} ${nuestras.length} · ${m.rival} ${infracciones.length - nuestras.length}`);
+    lineas.push(`*PENALES COMETIDOS*  ${equipoNombre(m.equipo)} ${nuestras.length} · ${m.rival} ${infracciones.length - nuestras.length}`);
     const porTipo = {};
     const porJugador = {};
     for (const e of nuestras) {
@@ -897,7 +900,7 @@ function textoResumen(matchId) {
   if (tarjetas.length) {
     lineas.push('*TARJETAS*');
     for (const e of tarjetas) {
-      const quien = e.equipo === 'rival' ? m.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : CLUB);
+      const quien = e.equipo === 'rival' ? m.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : equipoNombre(m.equipo));
       lineas.push(`${min(e)} ${e.tipo === 'roja' ? '🟥' : '🟨'} ${quien}`);
     }
     lineas.push('');
