@@ -36,6 +36,7 @@ const NOMBRE_TIPO = {
   try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
   infraccion: 'Penal cometido',
+  scrum: 'Scrum', line: 'Line', knock_on: 'Knock on',
 };
 
 /* Tipos de penal que comete el equipo. Para cambiarlos, editá solo esta lista:
@@ -46,6 +47,24 @@ const TIPOS_PENAL = [
   'Scrum', 'Line', 'Antideportivo', 'Otro',
 ];
 const DUR_AMARILLA = 600;
+
+/* Formaciones: siempre nuestras. "ganado"/"perdido" son con introducción o
+   lanzamiento propio; "robado" es cuando se la sacamos al rival. */
+const FORMACIONES = [
+  { k: 'scrum', n: 'Scrum', g: 'Ganado', p: 'Perdido', r: 'Robado' },
+  { k: 'line', n: 'Line', g: 'Ganada', p: 'Perdida', r: 'Robada' },
+];
+// "Line ganada" pero "Scrum ganado": el género sale de la propia formación
+function textoFormacion(tipo, detalle) {
+  const F = FORMACIONES.find((x) => x.k === tipo);
+  if (!F) return NOMBRE_TIPO[tipo] || tipo;
+  const palabra = detalle === 'perdido' ? F.p : detalle === 'robado' ? F.r : F.g;
+  return `${F.n} ${palabra.toLowerCase()}`;
+}
+function ladoFormacion(tipo, detalle) {
+  if (detalle === 'robado') return 'al rival';
+  return tipo === 'line' ? 'lanzamiento nuestro' : 'introducción nuestra';
+}
 
 /* Nombre del club: se muestra en el login y encabeza el texto de WhatsApp. */
 const CLUB = 'Barceló Rugby';
@@ -231,14 +250,17 @@ function renderLogin() {
 
 /* --------------------------------------------------------------- layout */
 
-function shell({ titulo, sub, back, acciones = '', contenido, tab, fab }) {
+function shell({ titulo, sub, back, acciones = '', contenido, tab, fab, bajo = '' }) {
   app.innerHTML = `
   <div class="app">
+   <div class="cabecera">
     <div class="topbar">
       ${back ? `<button data-back aria-label="Volver">&#8249;</button>` : `<img class="marca" src="/logo.png" alt="">`}
       <h1 class="trunc">${esc(titulo)}${sub ? `<span class="sub trunc">${esc(sub)}</span>` : ''}</h1>
       ${acciones}
     </div>
+    ${bajo}
+   </div>
     <main>${contenido}</main>
     ${fab ? `<button class="fab" data-fab aria-label="Agregar">+</button>` : ''}
     <nav class="nav">
@@ -845,6 +867,7 @@ function menuCuenta() {
 let TICK = null, POLL = null, WAKE = null;
 let VIVO = null;         // último estado traído del servidor
 let LADO = 'nosotros';   // equipo elegido en los botones de puntos
+let TAB_VIVO = 'puntos'; // pestaña abierta dentro del En vivo
 let ELEGIR_PARTIDO = false;
 
 function pararTimers() {
@@ -972,132 +995,158 @@ function pintarVivo() {
   const v = VIVO, p = v.partido;
   const corriendo = !!p.reloj_corriendo;
   const terminado = p.estado === 'finalizado';
-  const abs = absActual(v);
-
   const activas = v.tarjetas.filter((t) => t.tipo === 'roja' || t.restante > 0);
-  const eventos = v.eventos.slice().reverse();
 
-  const botonPeriodo = terminado
-    ? `<button class="btn sec" data-reabrir>Reabrir partido</button>`
-    : p.periodo <= 1
-      ? `<button class="btn sec" data-finperiodo>Fin del 1er tiempo</button>`
-      : `<button class="btn sec" data-finperiodo>Fin del partido</button>`;
+  const cabecera = `
+    <div class="vivo-fijo">
+      <div class="lado"><span class="eq trunc">${esc(nombreEquipo(p.equipo))}</span><span class="pts">${v.marcador.nosotros}</span></div>
+      <button class="reloj-chico ${corriendo ? 'on' : ''}" data-toggle ${terminado ? 'disabled' : ''}>
+        <b id="reloj">${mmss(segundosActuales(v))}</b>
+        <span>${terminado ? 'final' : (corriendo ? '❙❙ ' : '▶ ') + nombrePeriodo(p)}</span>
+      </button>
+      <div class="lado"><span class="eq trunc">${esc(p.rival)}</span><span class="pts">${v.marcador.rival}</span></div>
+    </div>
+    <div class="vivo-tabs">
+      ${[['puntos', 'Puntos'], ['formaciones', 'Formaciones'], ['crono', 'Cronología']]
+        .map(([k, n]) => `<button data-tab="${k}" class="${TAB_VIVO === k ? 'on' : ''}">${n}</button>`).join('')}
+    </div>
+    ${activas.length ? `<div class="vivo-alerta">${activas.map((t) => `
+      <span><i class="tarj ${t.tipo}"></i>${esc(t.apellido || (t.equipo === 'rival' ? p.rival : nombreCorto()))}
+      <b data-tarjeta="${t.id}">${t.tipo === 'roja' ? 'expulsado' : mmss(t.restante)}</b></span>`).join('')}</div>` : ''}`;
 
   shell({
     titulo: 'En vivo',
     sub: `${nombreEquipo(p.equipo)} vs ${p.rival}`,
     tab: 'vivo',
+    bajo: cabecera,
     acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
-    contenido: `
-      <div class="marcador">
-        <div class="lado">
-          <span class="eq trunc">${esc(nombreEquipo(p.equipo))}</span>
-          <span class="pts">${v.marcador.nosotros}</span>
-        </div>
-        <span class="sep">–</span>
-        <div class="lado">
-          <span class="eq trunc">${esc(p.rival)}</span>
-          <span class="pts">${v.marcador.rival}</span>
-        </div>
-      </div>
-
-      <div class="card reloj-card">
-        <div class="row">
-          <span class="chip ${corriendo ? '' : 'b'}">${nombrePeriodo(p)}</span>
-          <div class="grow"></div>
-          <span class="muted">${corriendo ? 'corriendo' : terminado ? 'terminado' : 'detenido'}</span>
-        </div>
-        <div id="reloj" class="reloj ${corriendo ? 'on' : ''}">${mmss(segundosActuales(v))}</div>
-        <div class="two">
-          ${terminado ? '' : `<button class="btn ${corriendo ? 'dan' : ''}" data-toggle>${corriendo ? '⏸ Parar' : '▶ Arrancar'}</button>`}
-          ${botonPeriodo}
-        </div>
-      </div>
-
-      ${activas.length ? `
-        <div class="sec-title">Tarjetas</div>
-        ${activas.map((t) => `
-          <div class="card" style="padding:11px 13px">
-            <div class="row">
-              <span class="tarj ${t.tipo}"></span>
-              <span class="grow trunc">
-                <span style="font-weight:600">${t.equipo === 'rival' ? esc(p.rival) : (t.apellido ? esc(t.apellido + ', ' + t.nombre) : 'Sin jugador')}</span>
-                <span class="muted" style="display:block">${t.tipo === 'roja' ? 'Expulsado' : 'Amarilla'} · min ${t.minuto}</span>
-              </span>
-              <span class="cuenta ${t.tipo === 'roja' ? 'ok' : ''}" data-tarjeta="${t.id}">${t.tipo === 'roja' ? 'expulsado' : mmss(t.restante)}</span>
-            </div>
-          </div>`).join('')}` : ''}
-
-      ${(v.penales.nosotros || v.penales.rival) ? `
-        <div class="sec-title">Penales cometidos</div>
-        <div class="card">
-          <div class="row">
-            <div class="lado-penal">
-              <span class="muted trunc">${esc(nombreEquipo(p.equipo))}</span>
-              <strong>${v.penales.nosotros}</strong>
-            </div>
-            <div class="lado-penal">
-              <span class="muted trunc">${esc(p.rival)}</span>
-              <strong>${v.penales.rival}</strong>
-            </div>
-          </div>
-          ${v.penales.porTipo.length ? `<div class="progreso" style="margin:12px 0 0">
-            ${v.penales.porTipo.map(([t, n]) => `<span class="chip">${esc(t)} ${n}</span>`).join('')}
-          </div>` : ''}
-          ${v.penales.porJugador.length ? `<div class="muted" style="margin-top:10px">
-            ${v.penales.porJugador.map(([j, n]) => `${esc(j)}: ${n}`).join(' · ')}
-          </div>` : ''}
-        </div>` : ''}
-
-      <div class="sec-title">Cargar</div>
-      <div class="segmento">
-        <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreEquipo(p.equipo))}</button>
-        <button data-lado="rival" class="${LADO === 'rival' ? 'on' : ''}">${esc(p.rival)}</button>
-      </div>
-      <div class="grid-puntos">
-        ${TIPOS_PUNTO.map((t) => `
-          <button class="btn punto" data-punto="${t.k}">
-            <span>${t.n}</span><small>+${t.p}</small>
-          </button>`).join('')}
-        <button class="btn punto tarjeta" data-penal>
-          <span>Penal cometido</span><small>${LADO === 'rival' ? esc(p.rival) : 'elegís el tipo'}</small>
-        </button>
-        <button class="btn punto tarjeta" data-tarj>
-          <span>Tarjeta</span><small>🟨 🟥</small>
-        </button>
-      </div>
-
-      <div class="sec-title">Cronología</div>
-      ${eventos.length ? eventos.map((e) => `
-        <div class="card evento" style="padding:10px 12px">
-          <div class="row">
-            <span class="min">${minutoDe(e)}'</span>
-            <span class="grow trunc">
-              <span style="font-weight:600">${esc(NOMBRE_TIPO[e.tipo])}${e.detalle ? ` <span class="muted">· ${esc(e.detalle)}</span>` : ''}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
-              <span class="muted trunc" style="display:block">${e.equipo === 'rival' ? esc(p.rival) : (e.apellido ? esc(e.nombre + ' ' + e.apellido) : esc(nombreEquipo(p.equipo)))}</span>
-            </span>
-            <button class="x" data-borrar="${e.id}" aria-label="Borrar">&times;</button>
-          </div>
-        </div>`).join('') : '<div class="muted" style="padding:4px 6px 12px">Todavía no se cargó nada.</div>'}
-
-      <div style="height:6px"></div>
-      <button class="btn sec" data-compartir>Compartir resultado o enlace</button>
-      <div style="height:8px"></div>
-      <button class="btn sec" data-resumen>Exportar resumen</button>
-      <div style="height:8px"></div>
-      <button class="btn sec" data-plantel>Ver el plantel</button>
-    `,
+    contenido: TAB_VIVO === 'formaciones' ? panelFormaciones(v)
+      : TAB_VIVO === 'crono' ? panelCrono(v)
+      : panelPuntos(v),
   });
 
+  app.querySelectorAll('[data-tab]').forEach((b) => {
+    b.onclick = () => { TAB_VIVO = b.dataset.tab; pintarVivo(); };
+  });
   const tog = $('[data-toggle]');
-  if (tog) tog.onclick = () => accionReloj(corriendo ? 'pausar' : 'iniciar');
-  const fp = $('[data-finperiodo]');
-  if (fp) fp.onclick = () => confirmar(
-    p.periodo <= 1 ? '¿Terminar el primer tiempo?' : '¿Terminar el partido?',
-    () => accionReloj('fin_periodo'), 'Sí, terminar');
-  const rab = $('[data-reabrir]');
-  if (rab) rab.onclick = () => accionReloj('reabrir');
+  if (tog && !terminado) tog.onclick = () => accionReloj(corriendo ? 'pausar' : 'iniciar');
+  $('[data-menu]').onclick = () => menuVivo();
 
+  if (TAB_VIVO === 'puntos') handlersPuntos(v);
+  if (TAB_VIVO === 'formaciones') handlersFormaciones(v);
+  if (TAB_VIVO === 'crono') handlersCrono(v);
+}
+
+/* ------------------------------------------------------------- pestañas */
+
+function panelPuntos(v) {
+  const p = v.partido;
+  const terminado = p.estado === 'finalizado';
+  return `
+    <div class="segmento">
+      <button data-lado="nosotros" class="${LADO === 'nosotros' ? 'on' : ''}">${esc(nombreEquipo(p.equipo))}</button>
+      <button data-lado="rival" class="${LADO === 'rival' ? 'on' : ''}">${esc(p.rival)}</button>
+    </div>
+    <div class="grid-puntos">
+      ${TIPOS_PUNTO.map((t) => `
+        <button class="btn punto" data-punto="${t.k}"><span>${t.n}</span><small>+${t.p}</small></button>`).join('')}
+      <button class="btn punto tarjeta" data-penal>
+        <span>Penal cometido</span><small>${LADO === 'rival' ? esc(p.rival) : 'elegís el tipo'}</small>
+      </button>
+      <button class="btn punto tarjeta" data-tarj><span>Tarjeta</span><small>🟨 🟥</small></button>
+    </div>
+
+    <div class="sec-title">Partido</div>
+    ${terminado
+      ? `<button class="btn sec" data-reabrir>Reabrir partido</button>`
+      : `<button class="btn sec" data-finperiodo>${p.periodo <= 1 ? 'Fin del 1er tiempo' : 'Fin del partido'}</button>`}
+    <div style="height:8px"></div>
+    <button class="btn sec" data-compartir>Compartir resultado o enlace</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-resumen>Exportar resumen</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-plantel>Ver el plantel</button>`;
+}
+
+function panelFormaciones(v) {
+  const f = v.formaciones;
+  const pct = (o) => (o.g + o.p ? Math.round((o.g / (o.g + o.p)) * 100) : null);
+  const chips = [];
+  FORMACIONES.forEach((F) => {
+    const o = f[F.k], porcentaje = pct(o);
+    if (porcentaje !== null) chips.push(`<span class="chip">${F.n} ${porcentaje}%</span>`);
+  });
+  const robadas = f.scrum.r + f.line.r;
+  if (robadas) chips.push(`<span class="chip">Robadas ${robadas}</span>`);
+  if (f.knock_on) chips.push(`<span class="chip b">Knock on ${f.knock_on}</span>`);
+  if (v.penales.nosotros) chips.push(`<span class="chip b">Penales ${v.penales.nosotros}</span>`);
+
+  return `
+    ${chips.length ? `<div class="progreso">${chips.join('')}</div>` : ''}
+
+    ${FORMACIONES.map((F) => {
+      const o = f[F.k];
+      return `
+      <div class="cont">
+        <div class="row">
+          <b class="cont-tit">${F.n}</b>
+          <span class="cont-tally">${o.g}<i>/${o.g + o.p}</i></span>
+        </div>
+        <div class="cont-fila">
+          <button class="ok" data-f="${F.k}" data-r="ganado">${F.g}</button>
+          <button class="mal" data-f="${F.k}" data-r="perdido">${F.p}</button>
+          <button class="rob" data-f="${F.k}" data-r="robado">${F.r}</button>
+        </div>
+        <div class="cont-sub"><b>${o.r}</b> ${F.k === 'line' ? (o.r === 1 ? 'robada' : 'robadas') : (o.r === 1 ? 'robado' : 'robados')} al rival</div>
+      </div>`;
+    }).join('')}
+
+    <div class="cont">
+      <div class="row">
+        <b class="cont-tit">Knock on</b>
+        <span class="cont-tally">${f.knock_on}</span>
+      </div>
+      <div class="cont-fila">
+        <button class="neu" data-f="knock_on" data-r="">+1</button>
+      </div>
+    </div>
+
+    <p class="muted" style="margin:4px 6px 0">
+      Todo se carga desde nuestro lado. Las formaciones del rival no se registran.
+    </p>`;
+}
+
+function panelCrono(v) {
+  const p = v.partido;
+  const eventos = v.eventos.slice().reverse();
+  if (!eventos.length) return '<div class="empty">Todavía no se cargó nada.</div>';
+
+  return eventos.map((e) => {
+    const esForm = e.tipo === 'scrum' || e.tipo === 'line' || e.tipo === 'knock_on';
+    const titulo = esForm && e.detalle
+      ? esc(textoFormacion(e.tipo, e.detalle))
+      : `${NOMBRE_TIPO[e.tipo]}${e.detalle ? ` <span class="muted">· ${esc(e.detalle)}</span>` : ''}`;
+    const quien = esForm
+      ? (e.detalle ? ladoFormacion(e.tipo, e.detalle) : nombreEquipo(p.equipo))
+      : (e.equipo === 'rival' ? p.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : nombreEquipo(p.equipo)));
+    return `
+      <div class="card evento" style="padding:10px 12px">
+        <div class="row">
+          <span class="min">${minutoDe(e)}'</span>
+          <span class="grow trunc">
+            <span style="font-weight:600">${titulo}${e.puntos ? ` <span class="muted">+${e.puntos}</span>` : ''}</span>
+            <span class="muted trunc" style="display:block">${esc(quien)}</span>
+          </span>
+          <button class="x" data-borrar="${e.id}" aria-label="Borrar">&times;</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* ------------------------------------------------------------- handlers */
+
+function handlersPuntos(v) {
+  const p = v.partido;
   app.querySelectorAll('[data-lado]').forEach((b) => {
     b.onclick = () => { LADO = b.dataset.lado; pintarVivo(); };
   });
@@ -1106,16 +1155,35 @@ function pintarVivo() {
   });
   $('[data-tarj]').onclick = () => sheetTarjeta();
   $('[data-penal]').onclick = () => tocarPenal();
+
+  const fp = $('[data-finperiodo]');
+  if (fp) fp.onclick = () => confirmar(
+    p.periodo <= 1 ? '¿Terminar el primer tiempo?' : '¿Terminar el partido?',
+    () => accionReloj('fin_periodo'), 'Sí, terminar');
+  const rab = $('[data-reabrir]');
+  if (rab) rab.onclick = () => accionReloj('reabrir');
+
+  $('[data-compartir]').onclick = () => sheetCompartir(p.id);
+  $('[data-resumen]').onclick = () => exportar(p.id, 'resumen');
+  $('[data-plantel]').onclick = () => { location.hash = '#/partido/' + p.id; };
+}
+
+function handlersFormaciones() {
+  app.querySelectorAll('[data-f]').forEach((b) => {
+    b.onclick = () => {
+      if (navigator.vibrate) { try { navigator.vibrate(18); } catch (e) {} }
+      cargarFormacion(b.dataset.f, b.dataset.r || null);
+    };
+  });
+}
+
+function handlersCrono(v) {
   app.querySelectorAll('[data-borrar]').forEach((b) => {
     b.onclick = () => confirmar('¿Borrar esta acción?', async () => {
-      aplicar(await api(`/matches/${p.id}/eventos/${b.dataset.borrar}`, { method: 'DELETE' }));
+      aplicar(await api(`/matches/${v.partido.id}/eventos/${b.dataset.borrar}`, { method: 'DELETE' }));
       toast('Borrado');
     });
   });
-  $('[data-resumen]').onclick = () => exportar(p.id, 'resumen');
-  $('[data-compartir]').onclick = () => sheetCompartir(p.id);
-  $('[data-plantel]').onclick = () => { location.hash = '#/partido/' + p.id; };
-  $('[data-menu]').onclick = () => menuVivo();
 }
 
 /* ------------------------------------------------------------ acciones */
@@ -1133,6 +1201,43 @@ async function cargarEvento(tipo, equipo, playerId, detalle) {
     }));
     toast(detalle ? `${detalle} cargado` : `${NOMBRE_TIPO[tipo]} cargado`);
   } catch (err) { toast(err.message, true); }
+}
+
+// Las formaciones van directo: un toque, sin panel ni jugador.
+async function cargarFormacion(tipo, resultado) {
+  try {
+    const r = await api(`/matches/${VIVO.partido.id}/eventos`, {
+      method: 'POST', body: { tipo, equipo: 'nosotros', detalle: resultado },
+    });
+    const ultimo = r.eventos[r.eventos.length - 1];
+    aplicar(r);
+    const txt = resultado ? textoFormacion(tipo, resultado) : NOMBRE_TIPO[tipo];
+    toastDeshacer(txt, ultimo && ultimo.id);
+  } catch (err) { toast(err.message, true); }
+}
+
+// Aviso con botón para deshacer lo último cargado
+function toastDeshacer(msg, eventoId) {
+  const t = $('#toast');
+  t.className = 'toast';
+  t.hidden = false;
+  t.textContent = msg + ' ';
+  if (eventoId) {
+    const b = document.createElement('button');
+    b.className = 'toast-undo';
+    b.type = 'button';
+    b.textContent = 'Deshacer';
+    b.onclick = async () => {
+      t.hidden = true;
+      try {
+        aplicar(await api(`/matches/${VIVO.partido.id}/eventos/${eventoId}`, { method: 'DELETE' }));
+        toast('Deshecho');
+      } catch (err) { toast(err.message, true); }
+    };
+    t.appendChild(b);
+  }
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.hidden = true; }, 4500);
 }
 
 function tocarPunto(tipo) {

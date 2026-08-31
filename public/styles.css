@@ -13,6 +13,7 @@
   --line: #e1e3ec;
   --rojo: #c0392b;
   --ambar: #b7791f;
+  --verde-ok: #1f7a5a;
   --radio: 14px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
@@ -34,6 +35,7 @@
     --line: #2a2f4a;
     --rojo: #e5705f;
     --ambar: #d6a13c;
+    --verde-ok: #4fb98c;
   }
 }
 
@@ -218,7 +220,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(88px + var(--safe-b) + var(--kb, 0px)); transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(68px + var(--safe-b) + var(--kb, 0px)); transform: translateX(-50%);
   background: #111; color: #fff; padding: 11px 18px; border-radius: 999px;
   font-size: 14px; z-index: 60; max-width: 90vw; text-align: center;
   box-shadow: 0 4px 16px rgba(0,0,0,.3);
@@ -324,3 +326,83 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 }
 .pass button svg { width: 22px; height: 22px; }
 .pass button:active { color: var(--marca); }
+
+/* ------------------------------------------------- en vivo: cabecera fija */
+
+.cabecera { position: sticky; top: 0; z-index: 20; }
+.cabecera .topbar { position: static; }
+
+.vivo-fijo {
+  background: var(--marca-osc); color: #fff;
+  padding: 0 12px 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.vivo-fijo .lado { flex: 1; min-width: 0; text-align: center; }
+.vivo-fijo .eq {
+  display: block; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; opacity: .78;
+}
+.vivo-fijo .pts {
+  display: block; font-size: 30px; font-weight: 800; line-height: 1.12;
+  font-variant-numeric: tabular-nums;
+}
+.reloj-chico {
+  flex: 0 0 auto; border: 0; cursor: pointer;
+  background: rgba(255,255,255,.13); color: #fff;
+  border-radius: 12px; padding: 5px 12px; text-align: center;
+  min-width: 92px;
+}
+.reloj-chico:active { background: rgba(255,255,255,.26); }
+.reloj-chico:disabled { opacity: .6; cursor: default; }
+.reloj-chico b { display: block; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.reloj-chico span { font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; opacity: .8; }
+.reloj-chico.on b { color: #fff; }
+
+.vivo-tabs { display: flex; background: var(--card); border-bottom: 1px solid var(--line); }
+.vivo-tabs button {
+  flex: 1; background: transparent; border: 0; cursor: pointer;
+  padding: 12px 4px 10px; font-size: 13.5px; font-weight: 600; color: var(--txt-2);
+  border-bottom: 2.5px solid transparent;
+}
+.vivo-tabs button.on { color: var(--marca); border-bottom-color: var(--marca); }
+
+.vivo-alerta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  background: var(--acento-claro); color: var(--acento);
+  padding: 7px 12px; font-size: 12.5px; font-weight: 600;
+}
+.vivo-alerta span { display: inline-flex; align-items: center; gap: 6px; }
+.vivo-alerta .tarj { width: 10px; height: 14px; border-radius: 2px; }
+.vivo-alerta b { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------ en vivo: contadores */
+
+.cont {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radio); padding: 11px 12px 12px; margin-bottom: 9px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.cont-tit {
+  flex: 1; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--txt-2);
+}
+.cont-tally { font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.cont-tally i { font-style: normal; color: var(--txt-2); font-weight: 600; font-size: 14px; }
+.cont-fila { display: flex; gap: 7px; }
+.cont-fila button {
+  flex: 1 1 0; min-width: 0; min-height: 50px; padding: 0 4px;
+  border-radius: 12px; border: 1px solid; background: var(--card);
+  font: 650 14px/1 inherit; cursor: pointer;
+}
+.cont-fila button:active { filter: brightness(.94); transform: scale(.98); }
+.cont-fila .ok  { color: var(--verde-ok); border-color: color-mix(in srgb, var(--verde-ok) 38%, transparent); background: color-mix(in srgb, var(--verde-ok) 9%, var(--card)); }
+.cont-fila .mal { color: var(--rojo);     border-color: color-mix(in srgb, var(--rojo) 38%, transparent);     background: color-mix(in srgb, var(--rojo) 9%, var(--card)); }
+.cont-fila .rob { color: var(--marca);    border-color: color-mix(in srgb, var(--marca) 38%, transparent);    background: color-mix(in srgb, var(--marca) 8%, var(--card)); }
+.cont-fila .neu { color: var(--txt-2); border-color: var(--line); }
+.cont-sub { font-size: 12.5px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.cont-sub b { color: var(--marca); font-weight: 700; }
+
+.toast-undo {
+  background: rgba(255,255,255,.2); color: #fff; border: 0; cursor: pointer;
+  font: 650 13px/1 inherit; padding: 7px 12px; border-radius: 999px; margin-left: 6px;
+}

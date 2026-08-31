@@ -526,11 +526,22 @@ app.post(
 
 /* ------------------------------------------------- seguimiento en vivo */
 
-const PUNTOS = { try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7, amarilla: 0, roja: 0, infraccion: 0 };
+const PUNTOS = {
+  try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7,
+  amarilla: 0, roja: 0, infraccion: 0,
+  scrum: 0, line: 0, knock_on: 0,
+};
+// Formaciones: siempre se cargan desde nuestro lado. "ganado" y "perdido" son
+// con introducción o lanzamiento nuestro; "robado" es cuando se la sacamos al
+// rival. Las formaciones del rival no se registran.
+const FORMACIONES = ['scrum', 'line'];
+const RESULTADOS = ['ganado', 'perdido', 'robado'];
+const esFormacion = (t) => FORMACIONES.includes(t) || t === 'knock_on';
 const NOMBRE_TIPO = {
   try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
   infraccion: 'Penal cometido',
+  scrum: 'Scrum', line: 'Line', knock_on: 'Knock on',
 };
 const DUR_AMARILLA = 600; // 10 minutos de juego
 
@@ -592,6 +603,15 @@ function vivoDe(matchId) {
       porJugador[k] = (porJugador[k] || 0) + 1;
     }
   }
+  const formaciones = { scrum: { g: 0, p: 0, r: 0 }, line: { g: 0, p: 0, r: 0 }, knock_on: 0 };
+  for (const e of eventos) {
+    if (e.tipo === 'knock_on') formaciones.knock_on++;
+    else if (FORMACIONES.includes(e.tipo)) {
+      const k = e.detalle === 'perdido' ? 'p' : e.detalle === 'robado' ? 'r' : 'g';
+      formaciones[e.tipo][k]++;
+    }
+  }
+
   const penales = {
     nosotros: infracciones.filter((e) => e.equipo !== 'rival').length,
     rival: infracciones.filter((e) => e.equipo === 'rival').length,
@@ -613,6 +633,7 @@ function vivoDe(matchId) {
     eventos,
     tarjetas,
     penales,
+    formaciones,
   };
 }
 
@@ -620,7 +641,7 @@ function vivoDe(matchId) {
    ninguna acción posible. Se sirve sin login, contra un token del partido. */
 function publicoDe(m) {
   const eventos = eventosDe(m.id)
-    .filter((e) => e.tipo !== 'infraccion')
+    .filter((e) => e.tipo !== 'infraccion' && !esFormacion(e.tipo))
     .map((e) => ({
       id: e.id, tipo: e.tipo, equipo: e.equipo, puntos: e.puntos,
       periodo: e.periodo, t_abs: e.t_abs,
@@ -762,9 +783,10 @@ app.post(
 
     const tipo = clean(req.body.tipo || '');
     if (!(tipo in PUNTOS)) return res.status(400).json({ error: 'Tipo de evento inválido' });
-    const equipo = req.body.equipo === 'rival' ? 'rival' : 'nosotros';
+    // Las formaciones son siempre nuestras y sin jugador
+    const equipo = (!esFormacion(tipo) && req.body.equipo === 'rival') ? 'rival' : 'nosotros';
     let playerId = req.body.player_id ? Number(req.body.player_id) : null;
-    if (equipo === 'rival') playerId = null; // del rival no guardamos jugadores
+    if (equipo === 'rival' || esFormacion(tipo)) playerId = null;
     if (playerId && !db.prepare('SELECT id FROM players WHERE id = ?').get(playerId))
       return res.status(404).json({ error: 'Jugador no encontrado' });
     if (m.periodo === 0)
@@ -776,10 +798,14 @@ app.post(
       ? segundosPeriodo(m)
       : Math.max(0, Math.min(7200, Number(req.body.segundos)));
 
-    // Para los penales cometidos guardamos además el tipo de infracción
-    const detalle = tipo === 'infraccion' && equipo !== 'rival'
-      ? String(clean(req.body.detalle || '')).slice(0, 40) || null
-      : null;
+    // El detalle guarda el tipo de penal cometido, o el resultado de la formación
+    let detalle = null;
+    if (tipo === 'infraccion' && equipo !== 'rival') {
+      detalle = String(clean(req.body.detalle || '')).slice(0, 40) || null;
+    } else if (FORMACIONES.includes(tipo)) {
+      detalle = RESULTADOS.includes(req.body.detalle) ? req.body.detalle : null;
+      if (!detalle) return res.status(400).json({ error: 'Falta el resultado de la formación' });
+    }
 
     db.prepare(
       `INSERT INTO match_events (match_id, tipo, equipo, player_id, puntos, periodo, segundos, t_abs, detalle, created_by)
@@ -878,6 +904,35 @@ function textoResumen(matchId) {
     lineas.push('');
   }
 
+  // Formaciones: eficiencia propia y robadas al rival
+  const form = { scrum: { g: 0, p: 0, r: 0 }, line: { g: 0, p: 0, r: 0 }, knock: 0 };
+  for (const e of eventos) {
+    if (e.tipo === 'knock_on') form.knock++;
+    else if (FORMACIONES.includes(e.tipo)) {
+      form[e.tipo][e.detalle === 'perdido' ? 'p' : e.detalle === 'robado' ? 'r' : 'g']++;
+    }
+  }
+  const pct = (o) => (o.g + o.p ? Math.round((o.g / (o.g + o.p)) * 100) : null);
+  const hayForm = form.scrum.g + form.scrum.p + form.scrum.r
+    + form.line.g + form.line.p + form.line.r + form.knock > 0;
+
+  if (hayForm) {
+    lineas.push('*FORMACIONES*');
+    const linea = [];
+    if (form.scrum.g + form.scrum.p) linea.push(`Scrum ${form.scrum.g}/${form.scrum.g + form.scrum.p} (${pct(form.scrum)}%)`);
+    if (form.line.g + form.line.p) linea.push(`Line ${form.line.g}/${form.line.g + form.line.p} (${pct(form.line)}%)`);
+    if (linea.length) lineas.push(linea.join(' · '));
+    const robadas = form.scrum.r + form.line.r;
+    if (robadas) {
+      const det = [];
+      if (form.scrum.r) det.push(`${form.scrum.r} scrum`);
+      if (form.line.r) det.push(`${form.line.r} line`);
+      lineas.push(`Robadas al rival: ${robadas} (${det.join(', ')})`);
+    }
+    if (form.knock) lineas.push(`Knock on: ${form.knock}`);
+    lineas.push('');
+  }
+
   const infracciones = eventos.filter((e) => e.tipo === 'infraccion');
   const nuestras = infracciones.filter((e) => e.equipo !== 'rival');
   if (infracciones.length) {
@@ -911,7 +966,8 @@ function textoResumen(matchId) {
     lineas.push('');
   }
 
-  if (!puntos.length && !tarjetas.length && !infracciones.length) lineas.push('Sin acciones cargadas.');
+  if (!puntos.length && !tarjetas.length && !infracciones.length && !hayForm)
+    lineas.push('Sin acciones cargadas.');
   return lineas.join('\n').trim();
 }
 

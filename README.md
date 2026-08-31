@@ -70,6 +70,12 @@ La pestaña **En vivo** sigue el partido desde la cancha:
 - **Tarjetas**: amarilla y roja, nuestras o del rival. La amarilla muestra
   cuánto le queda de los 10 minutos, contando **tiempo de juego**: si el reloj
   está parado, la sanción no corre.
+- **Formaciones**: scrum y line con **ganado, perdido y robado**, y knock on de un
+  toque. Todo se carga desde nuestro lado — las formaciones del rival no se
+  registran — así que no hay que elegir equipo. El porcentaje sale de ganado
+  sobre ganado más perdido; los robados se cuentan aparte, porque son mérito y
+  no eficiencia propia. Cada toque se guarda al instante y el aviso de abajo
+  trae **Deshacer** por si erraste el botón.
 - **Penales cometidos**: los que comete el equipo, con el tipo de infracción
   (offside, no soltar, no rolar, manos en el ruck, entrada al costado, tackle
   alto, juego peligroso, obstrucción, scrum, line, antideportivo, otro) y el
@@ -79,6 +85,9 @@ La pestaña **En vivo** sigue el partido desde la cancha:
   `public/app.js`.
 - **Cronología**: todo lo cargado con su minuto, y una X para borrar lo que se
   cargó mal.
+- La pantalla está partida en tres pestañas —**Puntos, Formaciones y
+  Cronología**— con el marcador y el reloj fijos arriba. El reloj se toca para
+  arrancar o parar, así que se maneja desde cualquiera de las tres.
 - La pantalla se refresca sola cada 8 segundos, así que dos personas pueden
   cargar en paralelo desde sus celulares. Mientras esté abierta, la app pide no
   apagar la pantalla.
@@ -87,8 +96,8 @@ Los estados del partido son **programado → en curso → finalizado**. En la li
 de Partidos, los que están en juego aparecen arriba con el marcador en vivo, y
 los terminados quedan en *Anteriores* con el resultado. Desde cualquiera de los
 dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
-**Resumen** (resultado, quién hizo los puntos, los penales cometidos y las
-tarjetas).
+**Resumen** (resultado, quién hizo los puntos, las formaciones con sus
+porcentajes, los penales cometidos y las tarjetas).
 
 ### Compartir
 
