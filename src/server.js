@@ -17,6 +17,7 @@ const CLUB_CORTO = CLUB.split(' ')[0];
 const equipoNombre = (letra) => `${CLUB_CORTO} ${letra}`;
 
 app.set('trust proxy', 1);
+app.disable('x-powered-by'); // no anunciar el framework
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -946,9 +947,13 @@ app.get('/v/:token', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'publico.html'));
 });
 
-app.get('*', (req, res) => {
+// La app navega por hash (#/partidos), así que las únicas rutas reales son "/"
+// (la sirve express.static) y "/v/<token>". Todo lo demás es 404: apenas el
+// dominio se hace público empiezan a llover pedidos a /.env, /.git/HEAD y
+// similares, y no tiene sentido contestarles con un 200.
+app.use((req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'No encontrado' });
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.status(404).type('text/plain').send('No encontrado');
 });
 
 app.listen(PORT, HOST, () => {
