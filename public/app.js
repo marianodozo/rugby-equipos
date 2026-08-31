@@ -128,6 +128,8 @@ const ICON = {
   usuarios: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/></svg>',
   buscar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   vivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.2 1.6M9.5 2h5M18.6 5.6l1.4 1.4"/></svg>',
+  ojo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  ojoTachado: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5c1.7 0 3.2.4 4.5 1M22 12s-3.6 6.5-10 6.5c-1.7 0-3.2-.4-4.5-1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/><path d="M3 3l18 18"/></svg>',
 };
 
 /* ----------------------------------------------------------------- sheet */
@@ -170,6 +172,21 @@ function confirmar(texto, onOk, textoBoton = 'Sí, borrar') {
   });
 }
 
+/* Botón de "ver contraseña": alterna el tipo del campo que tiene al lado.
+   En el celular es fácil errarle a una tecla y no darse cuenta. */
+function activarOjo(contenedor) {
+  contenedor.querySelectorAll('[data-ojo]').forEach((b) => {
+    b.onclick = () => {
+      const input = b.parentElement.querySelector('input');
+      const visible = input.type === 'text';
+      input.type = visible ? 'password' : 'text';
+      b.innerHTML = visible ? ICON.ojo : ICON.ojoTachado;
+      b.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+      input.focus();
+    };
+  });
+}
+
 /* ----------------------------------------------------------------- login */
 
 function renderLogin() {
@@ -186,11 +203,15 @@ function renderLogin() {
       <label>Usuario</label>
       <input name="username" autocomplete="username" autocapitalize="none" required>
       <label>Contraseña</label>
-      <input name="password" type="password" autocomplete="current-password" required>
+      <div class="pass">
+        <input name="password" type="password" autocomplete="current-password" required>
+        <button type="button" data-ojo aria-label="Mostrar contraseña">${ICON.ojo}</button>
+      </div>
       <div style="height:20px"></div>
       <button class="btn" type="submit">Entrar</button>
     </form>
   </div></div>`;
+  activarOjo($('#f'));
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);

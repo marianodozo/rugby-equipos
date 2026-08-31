@@ -313,3 +313,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
   display: block; width: 100%; border-radius: 12px;
   border: 1px solid var(--line); margin-bottom: 14px;
 }
+
+/* campo de contraseña con botón para verla */
+.pass { position: relative; }
+.pass input { padding-right: 52px; }
+.pass button {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: 0; padding: 10px; cursor: pointer;
+  color: var(--txt-2); display: flex; align-items: center; justify-content: center;
+}
+.pass button svg { width: 22px; height: 22px; }
+.pass button:active { color: var(--marca); }
