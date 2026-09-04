@@ -1,5 +1,5 @@
 /* Vista pública del partido: solo lectura, sin login y sin acciones.
-   Muestra tiempo, resultado y cronología (sin penales cometidos). */
+   Muestra tiempo, resultado y los puntos con quién los hizo. */
 'use strict';
 
 const TOKEN = location.pathname.split('/')[2] || '';
@@ -7,7 +7,7 @@ const app = document.getElementById('app');
 
 const NOMBRE_TIPO = {
   try: 'Try', conversion: 'Conversión', penal: 'Penal', drop: 'Drop',
-  try_penal: 'Try penal', amarilla: 'Tarjeta amarilla', roja: 'Tarjeta roja',
+  try_penal: 'Try penal',
 };
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
@@ -85,7 +85,7 @@ function pintar() {
         <div class="muted">${fechaCorta(p.fecha_hora)}</div>
       </div>
 
-      <div class="sec-title">Cronología</div>
+      <div class="sec-title">Los puntos</div>
       ${eventos.length ? eventos.map((e) => `
         <div class="card evento" style="padding:10px 12px">
           <div class="row">
@@ -96,7 +96,7 @@ function pintar() {
             </span>
           </div>
         </div>`).join('')
-      : '<div class="muted" style="padding:4px 6px">Todavía no pasó nada.</div>'}
+      : '<div class="muted" style="padding:4px 6px">Todavía no hay puntos.</div>'}
 
       <p class="muted" style="text-align:center;margin:24px 0 8px">
         Seguimiento en vivo de ${esc(v.club)}. Esta pantalla se actualiza sola.

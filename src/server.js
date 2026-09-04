@@ -640,8 +640,10 @@ function vivoDe(matchId) {
 /* Vista pública: lo mismo que ve el club pero sin penales cometidos y sin
    ninguna acción posible. Se sirve sin login, contra un token del partido. */
 function publicoDe(m) {
+  // Afuera solo se muestran los puntos y quién los hizo: nada de tarjetas,
+  // penales cometidos ni formaciones, que son datos internos del club.
   const eventos = eventosDe(m.id)
-    .filter((e) => e.tipo !== 'infraccion' && !esFormacion(e.tipo))
+    .filter((e) => e.puntos > 0)
     .map((e) => ({
       id: e.id, tipo: e.tipo, equipo: e.equipo, puntos: e.puntos,
       periodo: e.periodo, t_abs: e.t_abs,

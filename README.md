@@ -109,11 +109,13 @@ mostrar el partido afuera del club:
   y sale por el menú nativo de compartir; si el navegador no lo soporta, se
   descarga. **No incluye los penales cometidos.**
 - **Enlace en vivo**: `https://tu-dominio/v/<token>` — una página de **solo
-  lectura**, sin login, que muestra el tiempo corriendo, el resultado y la
-  cronología, y se actualiza sola cada 10 segundos. Quien la abre no puede tocar
-  nada: la API pública solo devuelve esos datos (ni penales, ni DNI, ni plantel)
-  y todo lo que modifica sigue pidiendo sesión. El enlace se da de baja cuando
-  quieras desde la misma pantalla, y deja de funcionar para todos.
+  lectura**, sin login, que muestra el tiempo corriendo, el resultado y **los
+  puntos con quién los hizo**, y se actualiza sola cada 10 segundos. Nada más:
+  ni tarjetas, ni penales cometidos, ni formaciones, ni DNI, ni plantel. El
+  recorte lo hace la API, no la pantalla, así que esos datos no viajan al
+  navegador de nadie. Quien abre el enlace no puede tocar nada, y todo lo que
+  modifica sigue pidiendo sesión. El enlace se da de baja cuando quieras desde
+  la misma pantalla, y deja de funcionar para todos.
 
 ### Identidad del club
 
