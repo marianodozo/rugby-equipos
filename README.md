@@ -83,11 +83,19 @@ La pestaña **En vivo** sigue el partido desde la cancha:
   botones queda el contador: total de cada lado, desglose por tipo y por
   jugador. La lista de tipos se cambia en la constante `TIPOS_PENAL` de
   `public/app.js`.
+- **Cambios**: se toca al suplente que entra y la app pregunta por quién,
+  poniendo arriba a los del mismo puesto. Tocando a alguien de la cancha se
+  hace al revés (“sale fulano, ¿quién entra?”), que es como se piensa una
+  lesión. Los que ya salieron quedan en una lista aparte y vuelven a entrar de
+  un toque. Solo se registran los cambios nuestros. **Quiénes están en cancha
+  no se guarda: se calcula** —arrancan los del 1 al 15 y se aplican los cambios
+  en orden—, así que borrar un cambio alcanza para deshacerlo y dos celulares
+  cargando el mismo partido nunca quedan con listas distintas.
 - **Cronología**: todo lo cargado con su minuto, y una X para borrar lo que se
   cargó mal.
-- La pantalla está partida en tres pestañas —**Puntos, Formaciones y
+- La pantalla está partida en cuatro pestañas —**Puntos, Formaciones, Cambios y
   Cronología**— con el marcador y el reloj fijos arriba. El reloj se toca para
-  arrancar o parar, así que se maneja desde cualquiera de las tres.
+  arrancar o parar, así que se maneja desde cualquiera de las cuatro.
 - La pantalla se refresca sola cada 8 segundos, así que dos personas pueden
   cargar en paralelo desde sus celulares. Mientras esté abierta, la app pide no
   apagar la pantalla.
@@ -97,7 +105,7 @@ de Partidos, los que están en juego aparecen arriba con el marcador en vivo, y
 los terminados quedan en *Anteriores* con el resultado. Desde cualquiera de los
 dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
 **Resumen** (resultado, quién hizo los puntos, las formaciones con sus
-porcentajes, los penales cometidos y las tarjetas).
+porcentajes, los penales cometidos, las tarjetas y los cambios).
 
 ### Compartir
 
@@ -111,7 +119,8 @@ mostrar el partido afuera del club:
 - **Enlace en vivo**: `https://tu-dominio/v/<token>` — una página de **solo
   lectura**, sin login, que muestra el tiempo corriendo, el resultado y **los
   puntos con quién los hizo**, y se actualiza sola cada 10 segundos. Nada más:
-  ni tarjetas, ni penales cometidos, ni formaciones, ni DNI, ni plantel. El
+  ni tarjetas, ni penales cometidos, ni formaciones, ni cambios, ni DNI, ni
+  plantel. El
   recorte lo hace la API, no la pantalla, así que esos datos no viajan al
   navegador de nadie. Quien abre el enlace no puede tocar nada, y todo lo que
   modifica sigue pidiendo sesión. El enlace se da de baja cuando quieras desde

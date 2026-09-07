@@ -24,6 +24,19 @@ const POSICIONES = {
 };
 const posicion = (n) => POSICIONES[n] || '';
 
+/* Puesto de cada número, para sugerir por quién entra un suplente.
+   El 24 y el 25 no tienen puesto: entran por cualquiera. */
+const PUESTO = {
+  1: 'pilar', 3: 'pilar', 17: 'pilar', 18: 'pilar',
+  2: 'hooker', 16: 'hooker',
+  4: 'segunda', 5: 'segunda', 19: 'segunda',
+  6: 'tercera', 7: 'tercera', 8: 'tercera', 20: 'tercera',
+  9: 'medio', 21: 'medio',
+  10: 'apertura', 22: 'apertura',
+  11: 'back', 12: 'back', 13: 'back', 14: 'back', 15: 'back', 23: 'back',
+};
+const mismoPuesto = (a, b) => !!PUESTO[a] && PUESTO[a] === PUESTO[b];
+
 /* Formas de sumar puntos y su valor */
 const TIPOS_PUNTO = [
   { k: 'try', n: 'Try', p: 5 },
@@ -37,6 +50,7 @@ const NOMBRE_TIPO = {
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
   infraccion: 'Penal cometido',
   scrum: 'Scrum', line: 'Line', knock_on: 'Knock on',
+  cambio: 'Cambio',
 };
 
 /* Tipos de penal que comete el equipo. Para cambiarlos, editá solo esta lista:
@@ -1007,7 +1021,7 @@ function pintarVivo() {
       <div class="lado"><span class="eq trunc">${esc(p.rival)}</span><span class="pts">${v.marcador.rival}</span></div>
     </div>
     <div class="vivo-tabs">
-      ${[['puntos', 'Puntos'], ['formaciones', 'Formaciones'], ['crono', 'Cronología']]
+      ${[['puntos', 'Puntos'], ['formaciones', 'Formaciones'], ['cambios', 'Cambios'], ['crono', 'Cronología']]
         .map(([k, n]) => `<button data-tab="${k}" class="${TAB_VIVO === k ? 'on' : ''}">${n}</button>`).join('')}
     </div>
     ${activas.length ? `<div class="vivo-alerta">${activas.map((t) => `
@@ -1021,6 +1035,7 @@ function pintarVivo() {
     bajo: cabecera,
     acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
     contenido: TAB_VIVO === 'formaciones' ? panelFormaciones(v)
+      : TAB_VIVO === 'cambios' ? panelCambios(v)
       : TAB_VIVO === 'crono' ? panelCrono(v)
       : panelPuntos(v),
   });
@@ -1034,6 +1049,7 @@ function pintarVivo() {
 
   if (TAB_VIVO === 'puntos') handlersPuntos(v);
   if (TAB_VIVO === 'formaciones') handlersFormaciones(v);
+  if (TAB_VIVO === 'cambios') handlersCambios(v);
   if (TAB_VIVO === 'crono') handlersCrono(v);
 }
 
@@ -1116,6 +1132,166 @@ function panelFormaciones(v) {
     </p>`;
 }
 
+/* Cambios: se toca al que entra y después se elige por quién sale. El banco
+   son pocos nombres y ya está a la vista; con esa elección la app puede
+   sugerir a los del mismo puesto. Solo se registran los cambios nuestros. */
+function panelCambios(v) {
+  const c = v.cambios;
+  const minuto = (t) => Math.floor(t / 60) + 1;
+  const conTarjeta = new Set(
+    v.tarjetas.filter((t) => t.player_id && (t.tipo === 'roja' || t.restante > 0)).map((t) => t.player_id)
+  );
+
+  if (!c.cancha.length && !c.banco.length && !c.salieron.length) {
+    return `
+      <div class="empty">Este partido todavía no tiene plantel cargado.</div>
+      <button class="btn sec" data-ir-plantel>Cargar el plantel</button>`;
+  }
+
+  const tarjetaJug = (p, sub) => `
+    <button class="jug" data-entra="${p.player_id}">
+      <span class="num">${p.numero}</span>
+      <span class="quien">
+        <b class="trunc">${esc(p.apellido)}</b>
+        <span class="trunc">${esc(sub)}</span>
+      </span>
+    </button>`;
+
+  const ficha = (p) => `
+    <button class="ficha${p.desde != null ? ' entro' : ''}" data-sale="${p.player_id}">
+      <em>${p.numero}</em><b class="trunc">${esc(p.apellido)}</b>
+      ${p.desde != null ? `<span class="marca">${minuto(p.desde)}'</span>`
+        : conTarjeta.has(p.player_id) ? '<span class="marca">🟨</span>' : ''}
+    </button>`;
+
+  return `
+    <div class="progreso">
+      <span class="chip">En cancha ${c.cancha.length}</span>
+      <span class="chip">Banco ${c.banco.length}</span>
+      ${c.total ? `<span class="chip b">Cambios ${c.total}</span>` : ''}
+    </div>
+    ${c.titulares < TITULARES
+      ? `<p class="muted" style="margin:2px 6px">Faltan ${TITULARES - c.titulares} titulares en el plantel.</p>` : ''}
+
+    <div class="sec-title">Banco <span>tocá al que entra</span></div>
+    ${c.banco.length
+      ? `<div class="banco">${c.banco.map((p) => tarjetaJug(p, posicion(p.numero))).join('')}</div>`
+      : '<div class="empty">No queda nadie en el banco.</div>'}
+
+    <div class="sec-title">En cancha</div>
+    ${c.cancha.length
+      ? `<div class="cancha">${c.cancha.map(ficha).join('')}</div>`
+      : '<div class="empty">No hay titulares cargados.</div>'}
+
+    ${c.salieron.length ? `
+      <div class="sec-title">Ya salieron <span>tocá para que vuelva</span></div>
+      <div class="banco">${c.salieron.map((p) => tarjetaJug(p, `Salió ${minuto(p.hasta)}'`)).join('')}</div>` : ''}`;
+}
+
+function handlersCambios(v) {
+  app.querySelectorAll('[data-entra]').forEach((b) => {
+    b.onclick = () => sheetPorQuienEntra(Number(b.dataset.entra));
+  });
+  app.querySelectorAll('[data-sale]').forEach((b) => {
+    b.onclick = () => sheetQuienEntra(Number(b.dataset.sale));
+  });
+  const ir = $('[data-ir-plantel]');
+  if (ir) ir.onclick = () => { location.hash = '#/partido/' + v.partido.id; };
+}
+
+// Lista de jugadores dentro de una hoja, con los del mismo puesto arriba
+function hojaCambio({ titulo, sub, opciones, numeroRef, tituloResto, tituloTodos, onPick }) {
+  const sug = opciones.filter((p) => mismoPuesto(numeroRef, p.numero));
+  const w = openSheet(`${esc(titulo)}<span class="sub-hoja">${esc(sub)}</span>`, `
+    <div id="lista-cambio"></div>`, null, {
+    alta: true,
+    sticky: `<div class="search">${ICON.buscar}
+      <input id="q" placeholder="Buscar por apellido o número" autocomplete="off" enterkeyhint="done">
+    </div>`,
+  });
+  const input = w.querySelector('#q');
+  const cont = w.querySelector('#lista-cambio');
+
+  const fila = (p) => {
+    const detalle = p.desde != null ? `${posicion(p.numero)} · entró ${Math.floor(p.desde / 60) + 1}'`
+      : p.hasta != null ? `${posicion(p.numero)} · salió ${Math.floor(p.hasta / 60) + 1}'`
+      : posicion(p.numero);
+    return `
+      <li data-p="${p.player_id}">
+        <span class="ini">${p.numero}</span>
+        <span class="grow trunc">
+          <span style="font-weight:600">${esc(nombreCompleto(p))}</span>
+          <span class="muted trunc" style="display:block">${esc(detalle)}</span>
+        </span>
+      </li>`;
+  };
+
+  const pintar = () => {
+    const q = norm(input.value.trim());
+    const filtrar = (arr) => (!q ? arr : arr.filter((p) =>
+      norm(p.apellido).includes(q) || norm(p.nombre).includes(q) ||
+      norm(p.apodo).includes(q) || String(p.numero) === q));
+    const arriba = q ? [] : sug;
+    const resto = filtrar(q ? opciones : opciones.filter((p) => !sug.includes(p)));
+    cont.innerHTML =
+      (arriba.length ? `<div class="sec-title">Mismo puesto</div><ul class="plist">${arriba.map(fila).join('')}</ul>` : '') +
+      (resto.length ? `<div class="sec-title">${esc(arriba.length ? tituloResto : tituloTodos)}</div><ul class="plist">${resto.map(fila).join('')}</ul>` : '') +
+      (!arriba.length && !resto.length ? '<div class="empty">Nadie con ese nombre.</div>' : '');
+    cont.querySelectorAll('[data-p]').forEach((li) => {
+      li.onclick = () => { closeSheet(); onPick(Number(li.dataset.p)); };
+    });
+  };
+  input.addEventListener('input', pintar);
+  pintar();
+}
+
+// Camino normal: toqué al que entra, ahora elijo por quién
+function sheetPorQuienEntra(entraId) {
+  const c = VIVO.cambios;
+  const entra = c.banco.concat(c.salieron).find((p) => p.player_id === entraId);
+  if (!entra) return;
+  if (!c.cancha.length) return toast('No hay nadie en cancha', true);
+  hojaCambio({
+    titulo: `¿Por quién entra ${entra.apellido}?`,
+    sub: `${entra.numero} · ${posicion(entra.numero)}`,
+    opciones: c.cancha,
+    numeroRef: entra.numero,
+    tituloResto: 'Los demás en cancha',
+    tituloTodos: 'En cancha',
+    onPick: (saleId) => cargarCambio(entraId, saleId),
+  });
+}
+
+// Camino inverso: pasa con la lesión, primero pensás en el que se va
+function sheetQuienEntra(saleId) {
+  const c = VIVO.cambios;
+  const sale = c.cancha.find((p) => p.player_id === saleId);
+  if (!sale) return;
+  const opciones = c.banco.concat(c.salieron);
+  if (!opciones.length) return toast('No queda nadie para entrar', true);
+  hojaCambio({
+    titulo: `Sale ${sale.apellido}, ¿quién entra?`,
+    sub: `${sale.numero} · ${posicion(sale.numero)}`,
+    opciones,
+    numeroRef: sale.numero,
+    tituloResto: 'Los demás disponibles',
+    tituloTodos: 'Disponibles',
+    onPick: (entraId) => cargarCambio(entraId, saleId),
+  });
+}
+
+async function cargarCambio(entraId, saleId) {
+  if (navigator.vibrate) { try { navigator.vibrate(18); } catch (e) {} }
+  try {
+    const r = await api(`/matches/${VIVO.partido.id}/eventos`, {
+      method: 'POST', body: { tipo: 'cambio', player_id: entraId, player_2_id: saleId },
+    });
+    const nuevo = r.eventos.reduce((a, b) => (!a || b.id > a.id ? b : a), null);
+    aplicar(r);
+    toastDeshacer(`Entró ${nuevo.apellido} por ${nuevo.apellido_2}`, nuevo && nuevo.id);
+  } catch (err) { toast(err.message, true); }
+}
+
 function panelCrono(v) {
   const p = v.partido;
   const eventos = v.eventos.slice().reverse();
@@ -1123,12 +1299,15 @@ function panelCrono(v) {
 
   return eventos.map((e) => {
     const esForm = e.tipo === 'scrum' || e.tipo === 'line' || e.tipo === 'knock_on';
+    const conNumero = (ap, n) => (ap ? `${ap}${n ? ` (${n})` : ''}` : '—');
     const titulo = esForm && e.detalle
       ? esc(textoFormacion(e.tipo, e.detalle))
       : `${NOMBRE_TIPO[e.tipo]}${e.detalle ? ` <span class="muted">· ${esc(e.detalle)}</span>` : ''}`;
-    const quien = esForm
-      ? (e.detalle ? ladoFormacion(e.tipo, e.detalle) : nombreEquipo(p.equipo))
-      : (e.equipo === 'rival' ? p.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : nombreEquipo(p.equipo)));
+    const quien = e.tipo === 'cambio'
+      ? `Entra ${conNumero(e.apellido, e.numero)} · sale ${conNumero(e.apellido_2, e.numero_2)}`
+      : esForm
+        ? (e.detalle ? ladoFormacion(e.tipo, e.detalle) : nombreEquipo(p.equipo))
+        : (e.equipo === 'rival' ? p.rival : (e.apellido ? `${e.nombre} ${e.apellido}` : nombreEquipo(p.equipo)));
     return `
       <div class="card evento" style="padding:10px 12px">
         <div class="row">

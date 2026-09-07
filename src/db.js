@@ -109,6 +109,9 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_share ON matches(share_to
 // Penales cometidos: el subtipo (offside, no rolar, etc.)
 agregarColumna('match_events', 'detalle', 'TEXT');
 
+// Cambios: player_id es el que entra, player_2_id el que sale
+agregarColumna('match_events', 'player_2_id', 'INTEGER REFERENCES players(id) ON DELETE SET NULL');
+
 // Usuario inicial
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {

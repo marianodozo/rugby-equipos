@@ -530,6 +530,7 @@ const PUNTOS = {
   try: 5, conversion: 2, penal: 3, drop: 3, try_penal: 7,
   amarilla: 0, roja: 0, infraccion: 0,
   scrum: 0, line: 0, knock_on: 0,
+  cambio: 0,
 };
 // Formaciones: siempre se cargan desde nuestro lado. "ganado" y "perdido" son
 // con introducción o lanzamiento nuestro; "robado" es cuando se la sacamos al
@@ -542,6 +543,7 @@ const NOMBRE_TIPO = {
   try_penal: 'Try penal', amarilla: 'Amarilla', roja: 'Roja',
   infraccion: 'Penal cometido',
   scrum: 'Scrum', line: 'Line', knock_on: 'Knock on',
+  cambio: 'Cambio',
 };
 const DUR_AMARILLA = 600; // 10 minutos de juego
 
@@ -561,12 +563,84 @@ function absoluto(m, periodo, seg) {
 function eventosDe(matchId) {
   return db
     .prepare(
-      `SELECT e.*, p.nombre, p.apellido, p.apodo
-         FROM match_events e LEFT JOIN players p ON p.id = e.player_id
+      `SELECT e.*, p.nombre, p.apellido, p.apodo,
+              q.nombre AS nombre_2, q.apellido AS apellido_2,
+              (SELECT numero FROM match_players mp
+                WHERE mp.match_id = e.match_id AND mp.player_id = e.player_id) AS numero,
+              (SELECT numero FROM match_players mp
+                WHERE mp.match_id = e.match_id AND mp.player_id = e.player_2_id) AS numero_2
+         FROM match_events e
+         LEFT JOIN players p ON p.id = e.player_id
+         LEFT JOIN players q ON q.id = e.player_2_id
         WHERE e.match_id = ?
         ORDER BY e.t_abs, e.id`
     )
     .all(matchId);
+}
+
+/* Quiénes están en cancha no se guarda: se calcula. Arrancan los del 1 al 15
+   y después se aplican los cambios en orden. Así, borrar un cambio alcanza
+   para deshacerlo y dos teléfonos cargando el mismo partido nunca quedan con
+   listas distintas. Solo se registran los cambios nuestros. */
+function cambiosDe(matchId, eventos) {
+  const roster = rosterDe(matchId);
+  const porId = new Map(roster.map((r) => [r.player_id, r]));
+  const ficha = (r, extra) => ({
+    player_id: r.player_id, numero: r.numero,
+    nombre: r.nombre, apellido: r.apellido, apodo: r.apodo, ...extra,
+  });
+
+  const enCancha = new Set(roster.filter((r) => r.numero <= TITULARES).map((r) => r.player_id));
+  const entro = new Map(); // player_id -> t_abs en que entró
+  const salio = new Map(); // player_id -> t_abs en que salió
+
+  const lista = [];
+  for (const e of eventos) {
+    if (e.tipo !== 'cambio') continue;
+    if (e.player_2_id) {
+      enCancha.delete(e.player_2_id);
+      entro.delete(e.player_2_id);
+      salio.set(e.player_2_id, e.t_abs);
+    }
+    if (e.player_id) {
+      enCancha.add(e.player_id);
+      salio.delete(e.player_id);
+      entro.set(e.player_id, e.t_abs);
+    }
+    lista.push({
+      id: e.id, t_abs: e.t_abs, periodo: e.periodo,
+      entra: e.player_id
+        ? { player_id: e.player_id, numero: e.numero, nombre: e.nombre, apellido: e.apellido }
+        : null,
+      sale: e.player_2_id
+        ? { player_id: e.player_2_id, numero: e.numero_2, nombre: e.nombre_2, apellido: e.apellido_2 }
+        : null,
+    });
+  }
+
+  // Los que entraron después van primero: es lo último que pasó en la cancha
+  const cancha = roster
+    .filter((r) => enCancha.has(r.player_id))
+    .map((r) => ficha(r, { desde: entro.has(r.player_id) ? entro.get(r.player_id) : null }))
+    .sort((a, b) => (b.desde ?? -1) - (a.desde ?? -1) || a.numero - b.numero);
+
+  const banco = roster
+    .filter((r) => r.numero > TITULARES && !enCancha.has(r.player_id) && !salio.has(r.player_id))
+    .map((r) => ficha(r));
+
+  const salieron = roster
+    .filter((r) => salio.has(r.player_id))
+    .map((r) => ficha(r, { hasta: salio.get(r.player_id) }))
+    .sort((a, b) => b.hasta - a.hasta);
+
+  return {
+    total: lista.length,
+    lista,
+    cancha,
+    banco,
+    salieron,
+    titulares: roster.filter((r) => r.numero <= TITULARES).length,
+  };
 }
 
 function vivoDe(matchId) {
@@ -634,6 +708,7 @@ function vivoDe(matchId) {
     tarjetas,
     penales,
     formaciones,
+    cambios: cambiosDe(matchId, eventos),
   };
 }
 
@@ -786,11 +861,23 @@ app.post(
     const tipo = clean(req.body.tipo || '');
     if (!(tipo in PUNTOS)) return res.status(400).json({ error: 'Tipo de evento inválido' });
     // Las formaciones son siempre nuestras y sin jugador
-    const equipo = (!esFormacion(tipo) && req.body.equipo === 'rival') ? 'rival' : 'nosotros';
+    const equipo = (!esFormacion(tipo) && tipo !== 'cambio' && req.body.equipo === 'rival')
+      ? 'rival' : 'nosotros';
     let playerId = req.body.player_id ? Number(req.body.player_id) : null;
     if (equipo === 'rival' || esFormacion(tipo)) playerId = null;
     if (playerId && !db.prepare('SELECT id FROM players WHERE id = ?').get(playerId))
       return res.status(404).json({ error: 'Jugador no encontrado' });
+
+    // Un cambio son dos jugadores nuestros: el que entra y el que sale
+    let player2Id = tipo === 'cambio' && req.body.player_2_id ? Number(req.body.player_2_id) : null;
+    if (tipo === 'cambio') {
+      if (!playerId || !player2Id)
+        return res.status(400).json({ error: 'Falta el jugador que entra o el que sale' });
+      if (playerId === player2Id)
+        return res.status(400).json({ error: 'No puede entrar y salir el mismo jugador' });
+      if (!db.prepare('SELECT id FROM players WHERE id = ?').get(player2Id))
+        return res.status(404).json({ error: 'Jugador no encontrado' });
+    }
     if (m.periodo === 0)
       return res.status(400).json({ error: 'Arrancá el reloj antes de cargar el partido' });
 
@@ -810,9 +897,10 @@ app.post(
     }
 
     db.prepare(
-      `INSERT INTO match_events (match_id, tipo, equipo, player_id, puntos, periodo, segundos, t_abs, detalle, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, tipo, equipo, playerId, PUNTOS[tipo], periodo, seg, absoluto(m, periodo, seg), detalle, req.user.id);
+      `INSERT INTO match_events (match_id, tipo, equipo, player_id, player_2_id, puntos, periodo, segundos, t_abs, detalle, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, tipo, equipo, playerId, player2Id, PUNTOS[tipo], periodo, seg,
+      absoluto(m, periodo, seg), detalle, req.user.id);
 
     res.status(201).json(vivoDe(id));
   })
@@ -968,7 +1056,18 @@ function textoResumen(matchId) {
     lineas.push('');
   }
 
-  if (!puntos.length && !tarjetas.length && !infracciones.length && !hayForm)
+  const cambios = eventos.filter((e) => e.tipo === 'cambio');
+  if (cambios.length) {
+    lineas.push('*CAMBIOS*');
+    for (const e of cambios) {
+      const entra = e.apellido ? `${e.apellido}${e.numero ? ` (${e.numero})` : ''}` : '—';
+      const sale = e.apellido_2 ? `${e.apellido_2}${e.numero_2 ? ` (${e.numero_2})` : ''}` : '—';
+      lineas.push(`${min(e)} Entra ${entra} · sale ${sale}`);
+    }
+    lineas.push('');
+  }
+
+  if (!puntos.length && !tarjetas.length && !infracciones.length && !hayForm && !cambios.length)
     lineas.push('Sin acciones cargadas.');
   return lineas.join('\n').trim();
 }
