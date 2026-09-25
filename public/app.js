@@ -281,7 +281,7 @@ function shell({ titulo, sub, back, acciones = '', contenido, tab, fab, bajo = '
     <nav class="nav">
       <a href="#/partidos" class="${tab === 'partidos' ? 'on' : ''}">${ICON.partidos}Partidos</a>
       <a href="#/vivo" class="${tab === 'vivo' ? 'on' : ''}">${ICON.vivo}En vivo</a>
-      <a href="#/asistencia" class="${tab === 'asistencia' ? 'on' : ''}">${ICON.asistencia}Asistencia</a>
+      <a href="#/entrenos" class="${tab === 'entrenos' ? 'on' : ''}">${ICON.asistencia}Entrenos</a>
       <a href="#/jugadores" class="${tab === 'jugadores' ? 'on' : ''}">${ICON.jugadores}Jugadores</a>
       <a href="#/usuarios" class="${tab === 'usuarios' ? 'on' : ''}">${ICON.usuarios}Usuarios</a>
     </nav>
@@ -817,72 +817,387 @@ function sumarDias(iso, n) {
   return dt.toISOString().slice(0, 10);
 }
 
-async function viewAsistencia() {
+function lunesDe(iso) {
+  const { dow } = partesFecha(iso);
+  return sumarDias(iso, dow === 0 ? -6 : -(dow - 1));
+}
+
+async function viewEntrenamientos() {
   const { entrenamientos, activos } = await api('/trainings');
+
+  // Agrupados por semana, como la planilla: la semana es la carpeta del día
+  const semanas = [];
+  for (const t of entrenamientos) {
+    const lunes = lunesDe(t.fecha);
+    let s = semanas.find((x) => x.lunes === lunes);
+    if (!s) semanas.push((s = { lunes, dias: [] }));
+    s.dias.push(t);
+  }
 
   const fila = (t) => {
     const { d, dow } = partesFecha(t.fecha);
-    const pct = activos ? Math.round((t.presentes / activos) * 100) : 0;
+    const detalle = [
+      t.bloques ? `${t.bloques} ${t.bloques === 1 ? 'bloque' : 'bloques'} · ${t.minutos}'` : 'sin plan',
+      t.presentes ? `${t.presentes} ${t.presentes === 1 ? 'presente' : 'presentes'}` : 'sin asistencia',
+    ].join(' · ');
     return `
-      <div class="card tap" data-t="${t.id}" style="padding:11px 13px">
-        <div class="row">
-          <span class="fecha-chip"><b>${d}</b><span>${DIAS_SEM[dow].slice(0, 3)}</span></span>
-          <span class="grow trunc">
-            <span style="font-weight:600;text-transform:capitalize">${esc(diaLargo(t.fecha))}</span>
-            <span class="muted trunc" style="display:block">${t.presentes} ${t.presentes === 1 ? 'presente' : 'presentes'}</span>
-          </span>
-          <span class="pct">${pct}%</span>
-        </div>
+      <div class="dia-fila" data-t="${t.id}">
+        <span class="fecha-chip"><b>${d}</b><span>${DIAS_SEM[dow].slice(0, 3)}</span></span>
+        <span class="grow trunc">
+          <span style="font-weight:600;text-transform:capitalize">${esc(diaLargo(t.fecha))}</span>
+          <span class="muted trunc" style="display:block">${esc(detalle)}</span>
+        </span>
+        <span class="pct">${activos && t.presentes ? Math.round((t.presentes / activos) * 100) + '%' : ''}</span>
       </div>`;
   };
 
   shell({
-    titulo: 'Asistencia',
+    titulo: 'Entrenamientos',
     sub: `${activos} ${activos === 1 ? 'jugador activo' : 'jugadores activos'}`,
-    tab: 'asistencia',
+    tab: 'entrenos',
     fab: true,
     contenido: `
       <button class="btn sec" data-informe>Informe de la semana</button>
-      <div class="sec-title">Entrenamientos</div>
-      ${entrenamientos.length
-        ? entrenamientos.map(fila).join('')
-        : '<div class="empty">Todavía no se tomó asistencia. Tocá el + para el entrenamiento de hoy.</div>'}`,
+      <div style="height:14px"></div>
+      ${semanas.length ? semanas.map((s) => `
+        <div class="semana-caja">
+          <div class="semana-cab">
+            <b>Semana del ${diaCorto(s.lunes)}</b>
+            <span>al ${diaCorto(sumarDias(s.lunes, 6))}</span>
+            <em>${s.dias.reduce((a, d) => a + d.minutos, 0)}'</em>
+          </div>
+          ${s.dias.map(fila).join('')}
+        </div>`).join('')
+        : '<div class="empty">Todavía no hay entrenamientos. Tocá el + para armar el de hoy.</div>'}`,
   });
 
   $('[data-informe]').onclick = () => { location.hash = '#/informe'; };
-  $('[data-fab]').onclick = () => sheetNuevoEntrenamiento();
+  $('[data-fab]').onclick = () => sheetNuevoEntrenamiento(entrenamientos);
   app.querySelectorAll('[data-t]').forEach((el) => {
-    el.onclick = () => { location.hash = '#/asistencia/' + el.dataset.t; };
+    el.onclick = () => { location.hash = '#/entreno/' + el.dataset.t; };
   });
 }
 
-function sheetNuevoEntrenamiento() {
-  openSheet('Tomar asistencia', `
-    <label>Día del entrenamiento</label>
-    <input type="date" id="fe" value="${hoyISO()}" max="${sumarDias(hoyISO(), 30)}">
+/* Lo primero que ofrece es copiar el entrenamiento anterior: semana a semana
+   el plan cambia poco, y así entrás con los bloques puestos. */
+function sheetNuevoEntrenamiento(anteriores = []) {
+  const copiables = anteriores.filter((t) => t.bloques > 0).slice(0, 4);
+  openSheet('Nuevo entrenamiento', `
+    <label>Día</label>
+    <input type="date" id="fe" value="${hoyISO()}">
+    <label style="margin-top:14px">Objetivo de minutos</label>
+    <div class="chips-op" id="obj">
+      ${[60, 75, 90, 120].map((m) => `<button type="button" data-obj="${m}" class="${m === 90 ? 'on' : ''}">${m}</button>`).join('')}
+    </div>
+    ${copiables.length ? `
+      <div class="sec-title">Arrancar copiando <span>y después editás</span></div>
+      <div class="chips-op col" id="copiar">
+        <button type="button" data-copiar="0" class="on">Empezar en blanco</button>
+        ${copiables.map((t) => `<button type="button" data-copiar="${t.id}">
+          ${esc(diaLargo(t.fecha))} · ${t.bloques} bloques</button>`).join('')}
+      </div>` : ''}
     <div style="height:16px"></div>
-    <button class="btn" data-ok>Empezar</button>
+    <button class="btn" data-ok>Crear</button>
   `, (w) => {
+    let objetivo = 90, copiarDe = 0;
+    w.querySelectorAll('[data-obj]').forEach((b) => {
+      b.onclick = () => {
+        objetivo = Number(b.dataset.obj);
+        w.querySelectorAll('[data-obj]').forEach((x) => x.classList.toggle('on', x === b));
+      };
+    });
+    w.querySelectorAll('[data-copiar]').forEach((b) => {
+      b.onclick = () => {
+        copiarDe = Number(b.dataset.copiar);
+        w.querySelectorAll('[data-copiar]').forEach((x) => x.classList.toggle('on', x === b));
+      };
+    });
     w.querySelector('[data-ok]').onclick = async () => {
       const fecha = w.querySelector('#fe').value;
       if (!fecha) return toast('Elegí el día', true);
       try {
-        const t = await api('/trainings', { method: 'POST', body: { fecha } });
+        const t = await api('/trainings', {
+          method: 'POST', body: { fecha, objetivo_min: objetivo, copiar_de: copiarDe || undefined },
+        });
         closeSheet();
-        if (t.existia) toast('Ese día ya estaba empezado');
-        location.hash = '#/asistencia/' + t.id;
+        if (t.existia) toast('Ese día ya estaba creado');
+        location.hash = '#/entreno/' + t.id;
       } catch (err) { toast(err.message, true); }
     };
   });
 }
 
+let TAB_ENTRENO = 'plan'; // pestaña abierta dentro del entrenamiento
+let FILTRO_ASIS = '';
+
 async function viewEntrenamiento(id) {
   const t = await api('/trainings/' + id);
-  let filtro = '';
+  FILTRO_ASIS = '';
+  pintarEntreno(t);
+}
 
-  const cuenta = () => t.jugadores.filter((j) => j.presente).length;
+function pintarEntreno(t) {
+  const presentes = t.jugadores.filter((j) => j.presente).length;
+  const tabs = `
+    <div class="vivo-tabs">
+      ${[['plan', 'Plan'], ['asistencia', 'Asistencia']]
+        .map(([k, n]) => `<button data-tab="${k}" class="${TAB_ENTRENO === k ? 'on' : ''}">${n}</button>`).join('')}
+    </div>
+    ${TAB_ENTRENO === 'asistencia' ? `<div class="search" style="margin:10px 12px 10px">${ICON.buscar}
+      <input id="qa" placeholder="Buscar jugador" autocomplete="off" enterkeyhint="done" value="${esc(FILTRO_ASIS)}">
+    </div>` : ''}`;
 
-  const filaJug = (j) => `
+  shell({
+    titulo: diaLargo(t.fecha),
+    sub: TAB_ENTRENO === 'plan'
+      ? `${t.minutos} de ${t.objetivo_min} minutos`
+      : `${presentes} de ${t.jugadores.length} presentes`,
+    back: true,
+    tab: 'entrenos',
+    acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
+    bajo: tabs,
+    contenido: TAB_ENTRENO === 'plan' ? panelPlan(t) : panelAsistencia(t),
+  });
+
+  app.querySelectorAll('[data-tab]').forEach((b) => {
+    b.onclick = () => { TAB_ENTRENO = b.dataset.tab; pintarEntreno(t); };
+  });
+  $('[data-menu]').onclick = () => menuEntrenamiento(t);
+  if (TAB_ENTRENO === 'plan') handlersPlan(t);
+  else handlersAsistencia(t);
+}
+
+function menuEntrenamiento(t) {
+  openSheet('Opciones', `
+    <button class="btn sec" data-a="objetivo">Cambiar el objetivo de minutos</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-a="informe">Ver el informe de la semana</button>
+    <div style="height:8px"></div>
+    <button class="btn dan" data-a="borrar">Borrar este entrenamiento</button>
+  `, (w) => {
+    w.querySelectorAll('[data-a]').forEach((b) => {
+      b.onclick = async () => {
+        const a = b.dataset.a;
+        closeSheet();
+        if (a === 'informe') return (location.hash = '#/informe/' + t.fecha);
+        if (a === 'objetivo') return sheetObjetivo(t);
+        confirmar(`¿Borrar el entrenamiento del ${diaLargo(t.fecha)}? Se va con el plan y la asistencia.`, async () => {
+          await api('/trainings/' + t.id, { method: 'DELETE' });
+          toast('Borrado');
+          location.hash = '#/entrenos';
+        });
+      };
+    });
+  });
+}
+
+function sheetObjetivo(t) {
+  openSheet('Objetivo de minutos', `
+    <div class="chips-op">
+      ${[60, 75, 90, 120].map((m) => `<button type="button" data-obj="${m}" class="${m === t.objetivo_min ? 'on' : ''}">${m}</button>`).join('')}
+    </div>
+    <label style="margin-top:14px">Otro</label>
+    <input type="number" id="otro" inputmode="numeric" min="0" max="300" value="${t.objetivo_min}">
+    <div style="height:16px"></div>
+    <button class="btn" data-ok>Guardar</button>
+  `, (w) => {
+    w.querySelectorAll('[data-obj]').forEach((b) => {
+      b.onclick = () => { w.querySelector('#otro').value = b.dataset.obj; };
+    });
+    w.querySelector('[data-ok]').onclick = async () => {
+      const v = Number(w.querySelector('#otro').value) || 0;
+      try {
+        await api('/trainings/' + t.id, { method: 'PUT', body: { objetivo_min: v } });
+        t.objetivo_min = v;
+        closeSheet();
+        pintarEntreno(t);
+      } catch (err) { toast(err.message, true); }
+    };
+  });
+}
+
+/* ------------------------------------------------------------ plan del día */
+
+function panelPlan(t) {
+  const sobra = t.minutos > t.objetivo_min;
+  const fila = (b, i) => `
+    <div class="bloque" data-b="${b.id}">
+      <span class="n">${i + 1}</span>
+      <span class="grow trunc">
+        <span style="font-weight:600">${esc(b.actividad)}</span>
+        ${b.foco ? `<span class="muted trunc" style="display:block">${esc(b.foco)}</span>` : ''}
+        <span class="tags">
+          <span class="${b.area === 'PF' ? 'pf' : ''}">${esc(b.area)}</span>
+          ${b.lider ? `<span class="lider">${esc(b.lider)}</span>` : ''}
+        </span>
+      </span>
+      <span class="mins">${b.minutos}<i>'</i></span>
+      <span class="mover">
+        <button data-sube="${b.id}" aria-label="Subir">&#8963;</button>
+        <button data-baja="${b.id}" aria-label="Bajar">&#8964;</button>
+      </span>
+    </div>`;
+
+  return `
+    <div class="total-min${sobra ? ' sobra' : t.minutos === t.objetivo_min ? ' justo' : ''}">
+      <b>${t.bloques.length} ${t.bloques.length === 1 ? 'bloque' : 'bloques'}</b>
+      <span class="num">${t.minutos}<i>/${t.objetivo_min}'</i></span>
+    </div>
+    ${t.bloques.length
+      ? t.bloques.map(fila).join('')
+      : '<div class="empty">Todavía no hay bloques. Agregá el primero.</div>'}
+    <div style="height:10px"></div>
+    <button class="btn sec" data-nuevo>+ Agregar bloque</button>
+    <div style="height:8px"></div>
+    <button class="btn" data-compartir>Compartir el plan</button>`;
+}
+
+function handlersPlan(t) {
+  const refrescar = (r) => {
+    t.bloques = r.bloques;
+    t.minutos = r.bloques.reduce((a, b) => a + b.minutos, 0);
+    if (r.sugerencias) t.sugerencias = r.sugerencias;
+    pintarEntreno(t);
+  };
+
+  app.querySelectorAll('[data-b]').forEach((el) => {
+    el.onclick = (e) => {
+      if (e.target.closest('.mover')) return;
+      sheetBloque(t, t.bloques.find((b) => b.id === Number(el.dataset.b)), refrescar);
+    };
+  });
+  const mover = async (bid, hacia) => {
+    try {
+      refrescar(await api(`/trainings/${t.id}/bloques/${bid}/mover`, { method: 'PUT', body: { hacia } }));
+    } catch (err) { toast(err.message, true); }
+  };
+  app.querySelectorAll('[data-sube]').forEach((b) => { b.onclick = () => mover(b.dataset.sube, 'arriba'); });
+  app.querySelectorAll('[data-baja]').forEach((b) => { b.onclick = () => mover(b.dataset.baja, 'abajo'); });
+  $('[data-nuevo]').onclick = () => sheetBloque(t, null, refrescar);
+  $('[data-compartir]').onclick = () => sheetCompartirPlan(t);
+}
+
+/* Cargar un bloque: todo lo que ya usaste vuelve como botón */
+function sheetBloque(t, bloque, onListo) {
+  const ed = !!bloque;
+  const sug = t.sugerencias || { actividades: [], lideres: [], minutos: [], focos: [] };
+  const minutosSug = (sug.minutos && sug.minutos.length ? sug.minutos : [10, 15, 20, 30]);
+
+  const w = openSheet(ed ? `Bloque ${t.bloques.indexOf(bloque) + 1}` : 'Nuevo bloque', `
+    <label>Actividad</label>
+    <input id="act" value="${esc(bloque ? bloque.actividad : '')}" placeholder="Ruck, pasadas, partido…" autocomplete="off">
+    ${sug.actividades.length ? `<div class="chips-op chica" id="sug-act">
+      ${sug.actividades.map((a) => `<button type="button" data-v="${esc(a)}">${esc(a)}</button>`).join('')}
+    </div>` : ''}
+
+    <label style="margin-top:14px">Foco</label>
+    <input id="foco" value="${esc(bloque && bloque.foco ? bloque.foco : '')}" placeholder="Opcional" autocomplete="off">
+    <div class="chips-op chica" id="sug-foco"></div>
+
+    <label style="margin-top:14px">Área</label>
+    <div class="segmento" id="area">
+      ${(t.areas || ['PF', 'TAC']).map((a) => `<button type="button" data-a="${esc(a)}"
+        class="${(bloque ? bloque.area : 'PF') === a ? 'on' : ''}">${esc(a)}</button>`).join('')}
+    </div>
+
+    <label style="margin-top:14px">Líder</label>
+    <input id="lider" value="${esc(bloque && bloque.lider ? bloque.lider : '')}" placeholder="Opcional" autocomplete="off">
+    ${sug.lideres.length ? `<div class="chips-op chica" id="sug-lider">
+      ${sug.lideres.map((a) => `<button type="button" data-v="${esc(a)}">${esc(a)}</button>`).join('')}
+    </div>` : ''}
+
+    <label style="margin-top:14px">Minutos</label>
+    <div class="chips-op" id="sug-min">
+      ${minutosSug.map((m) => `<button type="button" data-v="${m}"
+        class="${bloque && bloque.minutos === m ? 'on' : ''}">${m}</button>`).join('')}
+    </div>
+    <input type="number" id="min" inputmode="numeric" min="0" max="300" style="margin-top:8px"
+      value="${bloque ? bloque.minutos : ''}" placeholder="o escribilo">
+
+    <div style="height:18px"></div>
+    <button class="btn" data-ok>${ed ? 'Guardar' : 'Agregar bloque'}</button>
+    ${ed ? '<div style="height:8px"></div><button class="btn dan" data-del>Borrar el bloque</button>' : ''}
+  `, (w) => {
+    const $$ = (s) => w.querySelector(s);
+    let area = bloque ? bloque.area : (t.areas || ['PF'])[0];
+
+    // Los focos que se ofrecen son los que ya se usaron con esa actividad
+    const pintarFocos = () => {
+      const act = norm($$('#act').value.trim());
+      const lista = (sug.focos || [])
+        .filter((f) => !act || norm(f.actividad) === act)
+        .map((f) => f.foco)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 8);
+      $$('#sug-foco').innerHTML = lista
+        .map((f) => `<button type="button" data-v="${esc(f)}">${esc(f)}</button>`).join('');
+      $$('#sug-foco').querySelectorAll('[data-v]').forEach((b) => {
+        b.onclick = () => { $$('#foco').value = b.dataset.v; };
+      });
+    };
+
+    const elegir = (cont, destino) => {
+      const c = $$(cont);
+      if (!c) return;
+      c.querySelectorAll('[data-v]').forEach((b) => {
+        b.onclick = () => { $$(destino).value = b.dataset.v; if (destino === '#act') pintarFocos(); };
+      });
+    };
+    elegir('#sug-act', '#act');
+    elegir('#sug-lider', '#lider');
+    $$('#act').addEventListener('input', pintarFocos);
+    pintarFocos();
+
+    $$('#sug-min').querySelectorAll('[data-v]').forEach((b) => {
+      b.onclick = () => {
+        $$('#min').value = b.dataset.v;
+        $$('#sug-min').querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b));
+      };
+    });
+    w.querySelectorAll('[data-a]').forEach((b) => {
+      b.onclick = () => {
+        area = b.dataset.a;
+        w.querySelectorAll('[data-a]').forEach((x) => x.classList.toggle('on', x === b));
+      };
+    });
+
+    $$('[data-ok]').onclick = async () => {
+      const body = {
+        area,
+        actividad: $$('#act').value.trim(),
+        foco: $$('#foco').value.trim(),
+        lider: $$('#lider').value.trim(),
+        minutos: Number($$('#min').value) || 0,
+      };
+      if (!body.actividad) return toast('Falta la actividad', true);
+      try {
+        const r = ed
+          ? await api(`/trainings/${t.id}/bloques/${bloque.id}`, { method: 'PUT', body })
+          : await api(`/trainings/${t.id}/bloques`, { method: 'POST', body });
+        closeSheet();
+        onListo(r);
+      } catch (err) { toast(err.message, true); }
+    };
+    const del = $$('[data-del]');
+    if (del) del.onclick = () => confirmar('¿Borrar este bloque?', async () => {
+      const r = await api(`/trainings/${t.id}/bloques/${bloque.id}`, { method: 'DELETE' });
+      closeSheet();
+      onListo(r);
+      toast('Bloque borrado');
+    });
+  }, { alta: true });
+  return w;
+}
+
+/* --------------------------------------------------- asistencia del día */
+
+function listaAsistenciaHTML(t) {
+  const q = norm(FILTRO_ASIS.trim());
+  const vis = q
+    ? t.jugadores.filter((j) => norm(j.apellido).includes(q) || norm(j.nombre).includes(q) || norm(j.apodo).includes(q))
+    : t.jugadores;
+  if (!vis.length) return '<div class="empty">Nadie con ese nombre.</div>';
+  return vis.map((j) => `
     <button class="asis${j.presente ? ' si' : ''}" data-j="${j.id}">
       <span class="tick">${j.presente ? '✓' : ''}</span>
       <span class="grow trunc">
@@ -890,49 +1205,30 @@ async function viewEntrenamiento(id) {
         ${j.apodo || !j.activo ? `<span class="muted trunc" style="display:block">${
           [j.apodo ? esc(j.apodo) : '', j.activo ? '' : 'inactivo'].filter(Boolean).join(' · ')}</span>` : ''}
       </span>
-    </button>`;
+    </button>`).join('');
+}
 
-  const listaHTML = () => {
-    const q = norm(filtro.trim());
-    const vis = q
-      ? t.jugadores.filter((j) => norm(j.apellido).includes(q) || norm(j.nombre).includes(q) || norm(j.apodo).includes(q))
-      : t.jugadores;
-    return vis.length ? vis.map(filaJug).join('') : '<div class="empty">Nadie con ese nombre.</div>';
-  };
+function panelAsistencia(t) {
+  const presentes = t.jugadores.filter((j) => j.presente).length;
+  return `
+    <div class="barra-asis">
+      <b>Tocá a cada uno que vino</b>
+      <button class="link" data-todos>${presentes === t.jugadores.length ? 'Destildar todos' : 'Marcar todos'}</button>
+    </div>
+    <div id="lista-asis">${listaAsistenciaHTML(t)}</div>`;
+}
 
+function handlersAsistencia(t) {
   // El contador vive en la cabecera fija: se ve mientras scrolleás la lista
   const pintarCuenta = () => {
-    const n = cuenta();
+    const n = t.jugadores.filter((j) => j.presente).length;
     const el = document.querySelector('.cabecera .sub');
     if (el) el.textContent = `${n} de ${t.jugadores.length} presentes`;
     const b = $('[data-todos]');
     if (b) b.textContent = n === t.jugadores.length ? 'Destildar todos' : 'Marcar todos';
   };
 
-  shell({
-    titulo: diaLargo(t.fecha),
-    sub: `${cuenta()} de ${t.jugadores.length} presentes`,
-    back: true,
-    tab: 'asistencia',
-    acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
-    bajo: `<div class="search" style="margin:0 12px 10px">${ICON.buscar}
-      <input id="qa" placeholder="Buscar jugador" autocomplete="off" enterkeyhint="done">
-    </div>`,
-    contenido: `
-      <div class="barra-asis">
-        <b>Tocá a cada uno que vino</b>
-        <button class="link" data-todos>${cuenta() === t.jugadores.length ? 'Destildar todos' : 'Marcar todos'}</button>
-      </div>
-      <div id="lista-asis">${listaHTML()}</div>`,
-  });
-
-  const handlers = () => {
-    app.querySelectorAll('[data-j]').forEach((b) => {
-      b.onclick = () => tocarJugador(Number(b.dataset.j), b);
-    });
-  };
-
-  const tocarJugador = async (playerId, boton) => {
+  const tocar = async (playerId, boton) => {
     const j = t.jugadores.find((x) => x.id === playerId);
     const nuevo = !j.presente;
     // Se pinta al instante y después se guarda: si falla, se vuelve atrás
@@ -952,46 +1248,29 @@ async function viewEntrenamiento(id) {
     }
   };
 
-  const qa = $('#qa');
-  qa.oninput = () => {
-    filtro = qa.value;
-    $('#lista-asis').innerHTML = listaHTML();
-    handlers();
+  const enganchar = () => {
+    app.querySelectorAll('[data-j]').forEach((b) => { b.onclick = () => tocar(Number(b.dataset.j), b); });
   };
 
+  const qa = $('#qa');
+  if (qa) {
+    qa.oninput = () => {
+      FILTRO_ASIS = qa.value;
+      $('#lista-asis').innerHTML = listaAsistenciaHTML(t);
+      enganchar();
+    };
+  }
+
   $('[data-todos]').onclick = async () => {
-    const todos = cuenta() !== t.jugadores.length;
+    const todos = t.jugadores.filter((j) => j.presente).length !== t.jugadores.length;
     try {
       await api(`/trainings/${t.id}/asistencia`, { method: 'PUT', body: { todos } });
-      t.jugadores.forEach((j) => { j.presente = todos && j.activo ? true : todos ? j.presente : false; });
-      $('#lista-asis').innerHTML = listaHTML();
-      handlers();
-      pintarCuenta();
+      t.jugadores.forEach((j) => { j.presente = todos ? (j.activo ? true : j.presente) : false; });
+      pintarEntreno(t);
     } catch (err) { toast(err.message, true); }
   };
 
-  $('[data-menu]').onclick = () => {
-    openSheet('Opciones', `
-      <button class="btn sec" data-a="informe">Ver el informe de la semana</button>
-      <div style="height:8px"></div>
-      <button class="btn dan" data-a="borrar">Borrar este entrenamiento</button>
-    `, (w) => {
-      w.querySelectorAll('[data-a]').forEach((b) => {
-        b.onclick = () => {
-          const a = b.dataset.a;
-          closeSheet();
-          if (a === 'informe') return (location.hash = '#/informe/' + t.fecha);
-          confirmar(`¿Borrar el entrenamiento del ${diaLargo(t.fecha)}?`, async () => {
-            await api('/trainings/' + t.id, { method: 'DELETE' });
-            toast('Borrado');
-            location.hash = '#/asistencia';
-          });
-        };
-      });
-    });
-  };
-
-  handlers();
+  enganchar();
 }
 
 async function viewInforme(semana) {
@@ -1021,7 +1300,7 @@ async function viewInforme(semana) {
     titulo: 'Informe semanal',
     sub: `Del ${diaCorto(r.desde)} al ${diaCorto(r.hasta)}`,
     back: true,
-    tab: 'asistencia',
+    tab: 'entrenos',
     contenido: `
       <div class="semana-nav">
         <button data-sem="${sumarDias(r.desde, -7)}" aria-label="Semana anterior">&#8249;</button>
@@ -1061,10 +1340,156 @@ async function viewInforme(semana) {
     b.onclick = () => { location.hash = '#/informe/' + b.dataset.sem; };
   });
   app.querySelectorAll('[data-t]').forEach((b) => {
-    b.onclick = () => { location.hash = '#/asistencia/' + b.dataset.t; };
+    b.onclick = () => { location.hash = '#/entreno/' + b.dataset.t; };
   });
   const wa = $('[data-wa]');
   if (wa) wa.onclick = () => sheetTexto('Informe de la semana', r.texto);
+}
+
+/* ------------------------------------------------------- la placa del plan */
+
+/* Misma máquina que la imagen del resultado: se dibuja en el propio celular y
+   sale por el menú de compartir, sin pasar por ningún servidor. */
+async function imagenPlan(t) {
+  const W = 1080;
+  const ALTO_FILA = 104;
+  const TOPE = 300;
+  const H = Math.max(900, TOPE + t.bloques.length * ALTO_FILA + 190);
+
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+
+  const AZUL = '#1d2450', AZUL2 = '#293263';
+  const BLANCO = '#ffffff', TENUE = '#a8b0d4', VERDE = '#6fd8b0', GRIS = '#f3f4f8';
+  const FUENTE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  g.fillStyle = GRIS;
+  g.fillRect(0, 0, W, H);
+  const cab = g.createLinearGradient(0, 0, 0, TOPE);
+  cab.addColorStop(0, AZUL2);
+  cab.addColorStop(1, AZUL);
+  g.fillStyle = cab;
+  g.fillRect(0, 0, W, TOPE);
+
+  const recortar = (txt, max) => {
+    let s = String(txt || '');
+    if (g.measureText(s).width <= max) return s;
+    while (s.length > 1 && g.measureText(s + '…').width > max) s = s.slice(0, -1);
+    return s + '…';
+  };
+
+  try {
+    const logo = new Image();
+    logo.src = '/logo.png';
+    await logo.decode();
+    g.fillStyle = BLANCO;
+    g.beginPath();
+    g.arc(116, 128, 58, 0, Math.PI * 2);
+    g.fill();
+    g.drawImage(logo, 64, 76, 104, 104);
+  } catch (e) { /* si no carga, seguimos sin escudo */ }
+
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = BLANCO;
+  g.font = `800 52px ${FUENTE}`;
+  const titulo = diaLargo(t.fecha);
+  g.fillText(recortar(titulo.charAt(0).toUpperCase() + titulo.slice(1), 780), 196, 124);
+  g.fillStyle = TENUE;
+  g.font = `600 27px ${FUENTE}`;
+  g.fillText(`ENTRENAMIENTO · ${CLUB.toUpperCase()}`, 196, 168);
+
+  g.fillStyle = 'rgba(255,255,255,.14)';
+  g.beginPath(); g.roundRect(64, 212, W - 128, 60, 14); g.fill();
+  g.fillStyle = BLANCO;
+  g.font = `700 30px ${FUENTE}`;
+  g.fillText(`${t.bloques.length} ${t.bloques.length === 1 ? 'bloque' : 'bloques'}`, 92, 252);
+  g.textAlign = 'right';
+  g.fillText(`${t.minutos} minutos`, W - 92, 252);
+  g.textAlign = 'left';
+
+  let y = TOPE + 36;
+  t.bloques.forEach((b, i) => {
+    g.fillStyle = BLANCO;
+    g.beginPath(); g.roundRect(48, y, W - 96, ALTO_FILA - 14, 16); g.fill();
+
+    // franja del área, que reemplaza a la columna del Excel
+    g.fillStyle = b.area === 'PF' ? VERDE : AZUL2;
+    g.beginPath(); g.roundRect(48, y, 10, ALTO_FILA - 14, [16, 0, 0, 16]);
+    g.fill();
+
+    g.fillStyle = '#9aa1b8';
+    g.font = `700 26px ${FUENTE}`;
+    g.fillText(String(i + 1), 82, y + 40);
+
+    g.fillStyle = '#16192b';
+    g.font = `650 34px ${FUENTE}`;
+    g.fillText(recortar(b.actividad, 620), 126, y + 42);
+    if (b.foco) {
+      g.fillStyle = '#6b7185';
+      g.font = `400 27px ${FUENTE}`;
+      g.fillText(recortar(b.foco, 640), 126, y + 78);
+    }
+
+    g.textAlign = 'right';
+    g.fillStyle = AZUL2;
+    g.font = `800 38px ${FUENTE}`;
+    g.fillText(`${b.minutos}'`, W - 80, y + 44);
+    if (b.lider) {
+      g.fillStyle = '#6b7185';
+      g.font = `600 24px ${FUENTE}`;
+      g.fillText(recortar(b.lider, 200), W - 80, y + 78);
+    }
+    g.textAlign = 'left';
+    y += ALTO_FILA;
+  });
+
+  g.textAlign = 'center';
+  g.fillStyle = '#9aa1b8';
+  g.font = `600 26px ${FUENTE}`;
+  g.fillText(CLUB.toUpperCase(), W / 2, H - 48);
+
+  return new Promise((r) => c.toBlob(r, 'image/png'));
+}
+
+async function sheetCompartirPlan(t) {
+  if (!t.bloques.length) return toast('Cargá algún bloque primero', true);
+  const w = openSheet('Compartir el plan', `
+    <div id="prev-caja"><div class="muted" style="padding:20px 0;text-align:center">Armando la imagen…</div></div>
+    <button class="btn" data-img>Compartir imagen</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-bajar>Descargar imagen</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-txt>Mandarlo como texto</button>
+  `, null, { alta: true });
+
+  const caja = w.querySelector('#prev-caja');
+  let blob = null;
+  imagenPlan(t).then((b) => {
+    blob = b;
+    caja.innerHTML = `<img src="${URL.createObjectURL(b)}" alt="Plan" class="preview-img">`;
+  }).catch(() => { caja.innerHTML = '<div class="muted">No se pudo generar la imagen.</div>'; });
+
+  w.querySelector('[data-img]').onclick = async () => {
+    if (!blob) return toast('Esperá un segundo, se está generando', true);
+    const file = new File([blob], 'entrenamiento.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: `Entrenamiento ${diaLargo(t.fecha)}` }); }
+      catch (e) { /* si cancela, no pasa nada */ }
+    } else {
+      bajarImagen(blob);
+      toast('Imagen descargada: compartila desde la galería');
+    }
+  };
+  w.querySelector('[data-bajar]').onclick = () => { if (blob) bajarImagen(blob); };
+  w.querySelector('[data-txt]').onclick = async () => {
+    // El texto se pide de nuevo: puede haber cambiado un bloque desde que se abrió
+    try {
+      const d = await api('/trainings/' + t.id);
+      closeSheet();
+      sheetTexto('Plan del entrenamiento', d.texto);
+    } catch (err) { toast(err.message, true); }
+  };
 }
 
 /* Hoja para mandar un texto por WhatsApp o copiarlo */
@@ -2114,8 +2539,8 @@ async function router() {
     if (h.startsWith('#/partido/')) return await viewPartido(h.split('/')[2]);
     if (h.startsWith('#/informe/')) return await viewInforme(h.split('/')[2]);
     if (h.startsWith('#/informe')) return await viewInforme();
-    if (h.startsWith('#/asistencia/')) return await viewEntrenamiento(h.split('/')[2]);
-    if (h.startsWith('#/asistencia')) return await viewAsistencia();
+    if (h.startsWith('#/entreno/')) return await viewEntrenamiento(h.split('/')[2]);
+    if (h.startsWith('#/entrenos')) return await viewEntrenamientos();
     if (h.startsWith('#/jugadores')) return await viewJugadores();
     if (h.startsWith('#/usuarios')) return await viewUsuarios();
     return await viewPartidos();

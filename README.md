@@ -16,7 +16,7 @@ de los bots que ya tenés en el EC2 y consume muy pocos recursos: se despliega c
 - **Armado del plantel**: 25 lugares con **posición fija por número** (1 pilar izquierdo, 2 hooker, 9 medio scrum, 10 apertura, etc.). Cada asignación se guarda al instante, así que podés cargar el equipo en varios momentos, desde varios celulares.
 - **Export a WhatsApp**: genera el listado numerado del 1 al 25 con nombre, apellido y DNI, con botón para copiar o abrir WhatsApp directamente.
 - **Seguimiento en vivo** (pestaña *En vivo*): cronómetro de los dos tiempos, marcador, puntos con jugador, tarjetas con cuenta regresiva y cronología del partido.
-- **Asistencia** (pestaña *Asistencia*): un toque por jugador que vino, y el informe de la semana listo para mandar al grupo.
+- **Entrenamientos** (pestaña *Entrenos*): la planificación del día en bloques —área, actividad, foco, líder y minutos—, con la placa para mandar al grupo, y la asistencia de un toque por jugador con su informe semanal.
 
 ### Cómo se asigna un jugador (lo más usado)
 
@@ -108,13 +108,36 @@ dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
 **Resumen** (resultado, quién hizo los puntos, las formaciones con sus
 porcentajes, los penales cometidos, las tarjetas y los cambios).
 
-### Asistencia a los entrenamientos
+### Entrenamientos
 
-La pestaña **Asistencia** reemplaza la lista de papel:
+La pestaña **Entrenos** reemplaza al Excel de planificación y a la lista de
+asistencia en papel. **Un entrenamiento es una fecha** (uno por día) y tiene
+dos pestañas adentro: *Plan* y *Asistencia*. En la lista se agrupan por semana,
+la más nueva primero, con los minutos planificados de cada semana al costado.
 
-- Un **entrenamiento es una fecha** (uno por día). El + abre el de hoy, o elegís
-  otro día; si esa fecha ya estaba empezada, entrás a la misma y seguís.
-- Adentro está la lista de **jugadores activos**, ordenada por apellido. **Un
+#### El plan
+
+- Cada bloque guarda lo mismo que la planilla: **área (PF o TAC), actividad,
+  foco, líder y minutos**. El número de bloque no se carga: es el orden, y se
+  renumera solo al mover uno con las flechitas o al borrar.
+- Al cargar, **todo lo que ya usaste vuelve como botón**: actividades, líderes y
+  duraciones salen de lo más usado, y los focos que se ofrecen son los que ya
+  usaste con esa actividad. Después de dos o tres semanas se carga sin teclado.
+- Los minutos se suman contra el **objetivo del día** (90 por defecto,
+  cambiable desde el menú ⋮): la barra se pone verde cuando cierra justo y roja
+  si te pasaste.
+- Al crear un entrenamiento, lo primero que ofrece es **copiar uno anterior**,
+  porque semana a semana cambian dos bloques y no cinco.
+- **Compartir el plan** genera una placa PNG con el escudo, los bloques y el
+  total, que se dibuja en el propio celular y sale por el menú de compartir del
+  teléfono. También se puede mandar como texto. En la placa el área es la franja
+  de color de la izquierda —verde PF, azul TAC—, porque seis columnas no se leen
+  en un teléfono. La lista de áreas se cambia en la constante `AREAS` de
+  `src/server.js`.
+
+#### La asistencia
+
+- Es la lista de **jugadores activos**, ordenada por apellido. **Un
   toque marca presente** y se guarda solo, así se va marcando mientras llegan.
   El contador de la cabecera queda fijo mientras scrolleás.
 - **Marcar todos** para el día que vino el plantel entero: tildás todos y

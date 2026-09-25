@@ -503,6 +503,77 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 }
 .ini-chica.full { background: color-mix(in srgb, var(--verde-ok) 15%, var(--card)); color: var(--verde-ok); }
 
+/* ---------------------------------------------- entrenamientos: el plan */
+
+.semana-caja {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radio);
+  overflow: hidden; margin-bottom: 12px;
+}
+.semana-cab {
+  display: flex; align-items: baseline; gap: 7px; padding: 9px 12px;
+  background: var(--marca-claro); color: var(--marca);
+}
+.semana-cab b { font-size: 13px; font-weight: 750; }
+.semana-cab span { font-size: 11.5px; flex: 1; color: var(--txt-2); }
+.semana-cab em { font-style: normal; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dia-fila {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+  border-top: 1px solid var(--line); cursor: pointer;
+}
+.dia-fila:active { background: var(--marca-claro); }
+
+.total-min {
+  display: flex; align-items: center; gap: 10px; padding: 11px 13px; margin-bottom: 10px;
+  background: var(--marca); color: var(--sobre-marca); border-radius: 12px;
+}
+.total-min b { flex: 1; font-size: 13.5px; font-weight: 650; }
+.total-min .num { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.total-min .num i { font-style: normal; font-size: 12.5px; font-weight: 600; opacity: .72; }
+.total-min.justo { background: var(--verde-ok); }
+.total-min.sobra { background: var(--rojo); }
+
+.bloque {
+  display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 11px; margin-bottom: 7px;
+}
+.bloque:active { background: var(--marca-claro); }
+.bloque .n {
+  flex: 0 0 24px; height: 24px; border-radius: 7px; margin-top: 1px;
+  background: var(--bg); color: var(--txt-2);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.bloque .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+.bloque .tags span {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px;
+  border-radius: 999px; background: var(--marca-claro); color: var(--marca);
+}
+.bloque .tags span.pf { background: color-mix(in srgb, var(--verde-ok) 13%, var(--card)); color: var(--verde-ok); }
+.bloque .tags span.lider { background: transparent; border: 1px solid var(--line); color: var(--txt-2); font-weight: 600; }
+.bloque .mins {
+  flex: 0 0 auto; font-size: 16px; font-weight: 750; color: var(--marca);
+  font-variant-numeric: tabular-nums; padding-top: 1px;
+}
+.bloque .mins i { font-style: normal; font-size: 11px; font-weight: 600; color: var(--txt-2); }
+.bloque .mover { flex: 0 0 26px; display: flex; flex-direction: column; gap: 2px; }
+.bloque .mover button {
+  width: 26px; height: 22px; border: 0; border-radius: 6px; cursor: pointer;
+  background: var(--bg); color: var(--txt-2); font-size: 13px; line-height: 1; padding: 0;
+}
+.bloque .mover button:active { background: var(--marca-claro); color: var(--marca); }
+
+/* Botones-sugerencia: lo que ya se usó vuelve como chip */
+.chips-op { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chips-op.col { flex-direction: column; }
+.chips-op button {
+  font: 600 13px/1 inherit; padding: 10px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--txt-2);
+}
+.chips-op.col button { border-radius: 11px; text-align: left; }
+.chips-op.chica button { font-size: 12.5px; padding: 8px 12px; }
+.chips-op button.on { background: var(--marca); border-color: var(--marca); color: var(--sobre-marca); }
+
 .card.inactivo { opacity: .6; }
 .card.inactivo .chip { flex: 0 0 auto; }
 

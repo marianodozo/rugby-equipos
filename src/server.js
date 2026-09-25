@@ -350,14 +350,23 @@ function diaLegible(iso, conDia = true) {
 const activosCount = () =>
   db.prepare('SELECT COUNT(*) AS n FROM players WHERE activo = 1').get().n;
 
+/* Áreas de la planificación. Para cambiarlas, editá solo esta lista: lo que
+   figura acá es lo que se guarda y lo que sale en la placa. */
+const AREAS = ['PF', 'TAC'];
+
+const bloquesDe = (trainingId) =>
+  db.prepare('SELECT * FROM training_blocks WHERE training_id = ? ORDER BY orden, id').all(trainingId);
+
 app.get(
   '/api/trainings',
   auth,
   wrap((req, res) => {
     const filas = db
       .prepare(
-        `SELECT t.id, t.fecha, t.notas,
-                (SELECT COUNT(*) FROM training_attendance a WHERE a.training_id = t.id) AS presentes
+        `SELECT t.id, t.fecha, t.notas, t.objetivo_min,
+                (SELECT COUNT(*) FROM training_attendance a WHERE a.training_id = t.id) AS presentes,
+                (SELECT COUNT(*) FROM training_blocks b WHERE b.training_id = t.id) AS bloques,
+                (SELECT IFNULL(SUM(b.minutos), 0) FROM training_blocks b WHERE b.training_id = t.id) AS minutos
            FROM trainings t
           ORDER BY t.fecha DESC
           LIMIT 60`
@@ -367,7 +376,8 @@ app.get(
   })
 );
 
-// Crear el entrenamiento de una fecha, o devolver el que ya está
+// Crear el entrenamiento de una fecha, o devolver el que ya está.
+// Con copiar_de arranca con los bloques de otro día: semana a semana cambia poco.
 app.post(
   '/api/trainings',
   auth,
@@ -376,10 +386,150 @@ app.post(
     if (!ES_FECHA(fecha)) return res.status(400).json({ error: 'Fecha inválida' });
     const ya = db.prepare('SELECT * FROM trainings WHERE fecha = ?').get(fecha);
     if (ya) return res.json({ ...ya, existia: true });
+
+    const objetivo = Math.max(0, Math.min(600, Number(req.body.objetivo_min) || 90));
     const info = db
-      .prepare('INSERT INTO trainings (fecha, created_by) VALUES (?, ?)')
-      .run(fecha, req.user.id);
-    res.status(201).json({ id: info.lastInsertRowid, fecha, existia: false });
+      .prepare('INSERT INTO trainings (fecha, objetivo_min, created_by) VALUES (?, ?, ?)')
+      .run(fecha, objetivo, req.user.id);
+    const id = info.lastInsertRowid;
+
+    const copiarDe = Number(req.body.copiar_de) || 0;
+    if (copiarDe) {
+      const ins = db.prepare(
+        `INSERT INTO training_blocks (training_id, orden, area, actividad, foco, lider, minutos, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const origen = bloquesDe(copiarDe);
+      db.transaction(() => {
+        origen.forEach((b, i) =>
+          ins.run(id, i + 1, b.area, b.actividad, b.foco, b.lider, b.minutos, req.user.id));
+      })();
+    }
+    res.status(201).json({ id, fecha, objetivo_min: objetivo, existia: false });
+  })
+);
+
+app.put(
+  '/api/trainings/:id',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const t = db.prepare('SELECT * FROM trainings WHERE id = ?').get(id);
+    if (!t) return res.status(404).json({ error: 'Entrenamiento no encontrado' });
+    const objetivo = req.body.objetivo_min === undefined
+      ? t.objetivo_min
+      : Math.max(0, Math.min(600, Number(req.body.objetivo_min) || 0));
+    const notas = req.body.notas === undefined ? t.notas : (clean(req.body.notas) || null);
+    db.prepare('UPDATE trainings SET objetivo_min = ?, notas = ? WHERE id = ?').run(objetivo, notas, id);
+    res.json({ ok: true, objetivo_min: objetivo, notas });
+  })
+);
+
+/* ------------------------------------------------- bloques del entrenamiento */
+
+// Lo que ya se usó alguna vez, para ofrecerlo como botón y no volver a escribirlo
+function sugerencias() {
+  const top = (col, limite) =>
+    db.prepare(
+      `SELECT ${col} AS v, COUNT(*) AS n FROM training_blocks
+        WHERE IFNULL(${col}, '') <> ''
+        GROUP BY ${col} COLLATE NOCASE
+        ORDER BY n DESC, v COLLATE NOCASE
+        LIMIT ?`
+    ).all(limite).map((r) => r.v);
+  return {
+    actividades: top('actividad', 14),
+    lideres: top('lider', 8),
+    minutos: db.prepare(
+      `SELECT minutos AS v, COUNT(*) AS n FROM training_blocks
+        WHERE minutos > 0 GROUP BY minutos ORDER BY n DESC LIMIT 6`
+    ).all().map((r) => r.v).sort((a, b) => a - b),
+    // El foco depende de la actividad: el cliente filtra por la que eligió
+    focos: db.prepare(
+      `SELECT actividad, foco, COUNT(*) AS n FROM training_blocks
+        WHERE IFNULL(foco, '') <> ''
+        GROUP BY actividad COLLATE NOCASE, foco COLLATE NOCASE
+        ORDER BY n DESC LIMIT 60`
+    ).all().map((r) => ({ actividad: r.actividad, foco: r.foco })),
+  };
+}
+
+function datosBloque(body, previo) {
+  const area = AREAS.includes(clean(body.area || '')) ? clean(body.area) : (previo ? previo.area : AREAS[0]);
+  const actividad = String(clean(body.actividad ?? (previo ? previo.actividad : ''))).slice(0, 60);
+  const foco = String(clean(body.foco ?? (previo ? previo.foco : '')) || '').slice(0, 80) || null;
+  const lider = String(clean(body.lider ?? (previo ? previo.lider : '')) || '').slice(0, 40) || null;
+  const minutos = Math.max(0, Math.min(300, Number(
+    body.minutos === undefined ? (previo ? previo.minutos : 0) : body.minutos
+  ) || 0));
+  return { area, actividad, foco, lider, minutos };
+}
+
+app.post(
+  '/api/trainings/:id/bloques',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT id FROM trainings WHERE id = ?').get(id))
+      return res.status(404).json({ error: 'Entrenamiento no encontrado' });
+    const d = datosBloque(req.body, null);
+    if (!d.actividad) return res.status(400).json({ error: 'Falta la actividad' });
+    const orden = (db.prepare('SELECT IFNULL(MAX(orden), 0) AS n FROM training_blocks WHERE training_id = ?')
+      .get(id).n) + 1;
+    db.prepare(
+      `INSERT INTO training_blocks (training_id, orden, area, actividad, foco, lider, minutos, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, orden, d.area, d.actividad, d.foco, d.lider, d.minutos, req.user.id);
+    res.status(201).json({ bloques: bloquesDe(id), sugerencias: sugerencias() });
+  })
+);
+
+app.put(
+  '/api/trainings/:id/bloques/:bid',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const bid = Number(req.params.bid);
+    const previo = db.prepare('SELECT * FROM training_blocks WHERE id = ? AND training_id = ?').get(bid, id);
+    if (!previo) return res.status(404).json({ error: 'Bloque no encontrado' });
+    const d = datosBloque(req.body, previo);
+    if (!d.actividad) return res.status(400).json({ error: 'Falta la actividad' });
+    db.prepare(
+      'UPDATE training_blocks SET area = ?, actividad = ?, foco = ?, lider = ?, minutos = ? WHERE id = ?'
+    ).run(d.area, d.actividad, d.foco, d.lider, d.minutos, bid);
+    res.json({ bloques: bloquesDe(id), sugerencias: sugerencias() });
+  })
+);
+
+// Mover un bloque una posición arriba o abajo
+app.put(
+  '/api/trainings/:id/bloques/:bid/mover',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const bid = Number(req.params.bid);
+    const lista = bloquesDe(id);
+    const i = lista.findIndex((b) => b.id === bid);
+    if (i < 0) return res.status(404).json({ error: 'Bloque no encontrado' });
+    const j = req.body.hacia === 'arriba' ? i - 1 : i + 1;
+    if (j < 0 || j >= lista.length) return res.json({ bloques: lista });
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+    const up = db.prepare('UPDATE training_blocks SET orden = ? WHERE id = ?');
+    db.transaction(() => { lista.forEach((b, k) => up.run(k + 1, b.id)); })();
+    res.json({ bloques: bloquesDe(id) });
+  })
+);
+
+app.delete(
+  '/api/trainings/:id/bloques/:bid',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    db.prepare('DELETE FROM training_blocks WHERE id = ? AND training_id = ?').run(Number(req.params.bid), id);
+    const lista = bloquesDe(id);
+    const up = db.prepare('UPDATE training_blocks SET orden = ? WHERE id = ?');
+    db.transaction(() => { lista.forEach((b, k) => up.run(k + 1, b.id)); })();
+    res.json({ bloques: bloquesDe(id), sugerencias: sugerencias() });
   })
 );
 
@@ -484,13 +634,38 @@ app.get(
           ORDER BY p.apellido COLLATE NOCASE, p.nombre COLLATE NOCASE`
       )
       .all(id, id);
+    const bloques = bloquesDe(id);
     res.json({
       ...t,
       jugadores: jugadores.map((j) => ({ ...j, presente: !!j.presente })),
       presentes: jugadores.filter((j) => j.presente).length,
+      bloques,
+      minutos: bloques.reduce((a, b) => a + b.minutos, 0),
+      areas: AREAS,
+      sugerencias: sugerencias(),
+      texto: textoPlan(t, bloques),
     });
   })
 );
+
+// Lo que se manda al grupo cuando no se quiere la imagen
+function textoPlan(t, bloques) {
+  const l = [`*ENTRENAMIENTO ${diaLegible(t.fecha).toUpperCase()}*`, CLUB, ''];
+  if (!bloques.length) {
+    l.push('Todavía no hay bloques cargados.');
+    return l.join('\n');
+  }
+  bloques.forEach((b, i) => {
+    const partes = [`${i + 1}. ${b.actividad}`];
+    if (b.foco) partes.push(b.foco);
+    l.push(`${partes.join(' — ')}  (${b.minutos}')`);
+    const pie = [b.area, b.lider].filter(Boolean).join(' · ');
+    if (pie) l.push(`   ${pie}`);
+  });
+  l.push('');
+  l.push(`*Total: ${bloques.reduce((a, b) => a + b.minutos, 0)} minutos*`);
+  return l.join('\n');
+}
 
 // Marcar o limpiar a todos de una: si vino el plantel entero son dos toques
 app.put(

@@ -137,6 +137,27 @@ CREATE INDEX IF NOT EXISTS idx_trainings_fecha ON trainings(fecha);
 CREATE INDEX IF NOT EXISTS idx_asistencia_jugador ON training_attendance(player_id);
 `);
 
+/* Planificación: los bloques de cada entrenamiento (lo que era el Excel).
+   El número de bloque no se guarda: es "orden", y se renumera al mover. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS training_blocks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+  orden       INTEGER NOT NULL,
+  area        TEXT NOT NULL,
+  actividad   TEXT NOT NULL,
+  foco        TEXT,
+  lider       TEXT,
+  minutos     INTEGER NOT NULL DEFAULT 0,
+  created_by  INTEGER REFERENCES users(id),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bloques_training ON training_blocks(training_id, orden);
+`);
+
+// Cuántos minutos se planifican para ese día
+agregarColumna('trainings', 'objetivo_min', 'INTEGER NOT NULL DEFAULT 90');
+
 // Usuario inicial
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {

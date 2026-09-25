@@ -1,6 +1,6 @@
 /* Service worker mínimo: cachea el shell para que la app abra rápido.
    Las llamadas a /api/ NUNCA se cachean (siempre datos frescos). */
-const CACHE = 'equipos-v11';
+const CACHE = 'equipos-v12';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.json', '/logo.png', '/icon-192.png'];
 
 self.addEventListener('install', (e) => {
