@@ -163,6 +163,7 @@ const ICON = {
   vivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.2 1.6M9.5 2h5M18.6 5.6l1.4 1.4"/></svg>',
   ojo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   ojoTachado: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5c1.7 0 3.2.4 4.5 1M22 12s-3.6 6.5-10 6.5c-1.7 0-3.2-.4-4.5-1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/><path d="M3 3l18 18"/></svg>',
+  asistencia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8.5h8M8 12.5h8M8 16.5h4"/></svg>',
 };
 
 /* ----------------------------------------------------------------- sheet */
@@ -280,6 +281,7 @@ function shell({ titulo, sub, back, acciones = '', contenido, tab, fab, bajo = '
     <nav class="nav">
       <a href="#/partidos" class="${tab === 'partidos' ? 'on' : ''}">${ICON.partidos}Partidos</a>
       <a href="#/vivo" class="${tab === 'vivo' ? 'on' : ''}">${ICON.vivo}En vivo</a>
+      <a href="#/asistencia" class="${tab === 'asistencia' ? 'on' : ''}">${ICON.asistencia}Asistencia</a>
       <a href="#/jugadores" class="${tab === 'jugadores' ? 'on' : ''}">${ICON.jugadores}Jugadores</a>
       <a href="#/usuarios" class="${tab === 'usuarios' ? 'on' : ''}">${ICON.usuarios}Usuarios</a>
     </nav>
@@ -704,19 +706,20 @@ async function viewJugadores() {
   const inactivos = js.filter((p) => !p.activo);
 
   const fila = (p) => `
-    <div class="card tap" data-j="${p.id}" style="padding:11px 13px">
+    <div class="card tap${p.activo ? '' : ' inactivo'}" data-j="${p.id}" style="padding:11px 13px">
       <div class="row">
         <span class="ini" style="flex:0 0 38px;height:38px;border-radius:50%;background:var(--marca-claro);color:var(--marca);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">${esc(iniciales(p))}</span>
         <span class="grow trunc">
           <span style="font-weight:600">${esc(nombreCompleto(p))}</span>
           <span class="muted trunc" style="display:block">${p.apodo ? esc(p.apodo) + ' · ' : ''}DNI ${esc(p.dni)}</span>
         </span>
+        ${p.activo ? '' : '<span class="chip b">Inactivo</span>'}
       </div>
     </div>`;
 
   shell({
     titulo: 'Jugadores',
-    sub: `${activos.length} activos`,
+    sub: `${activos.length} activos${inactivos.length ? ` · ${inactivos.length} inactivos` : ''}`,
     tab: 'jugadores',
     fab: true,
     contenido: `
@@ -749,7 +752,11 @@ function formJugador(p) {
       <label>Nombre</label><input name="nombre" required value="${esc(p ? p.nombre : '')}">
       <label>DNI</label><input name="dni" required inputmode="numeric" value="${esc(p ? p.dni : '')}">
       <label>Apodo (opcional)</label><input name="apodo" value="${esc(p && p.apodo ? p.apodo : '')}">
-      ${ed ? `<label style="margin-top:16px"><input type="checkbox" name="activo" ${p.activo ? 'checked' : ''} style="width:auto;margin-right:8px">Activo en el club</label>` : ''}
+      ${ed ? `<label class="check" style="margin-top:16px">
+        <input type="checkbox" name="activo" ${p.activo ? 'checked' : ''}>
+        <span><b>Activo en el club</b>
+          <small>Si lo destildás no aparece más en la asistencia ni al armar los partidos, pero se guarda todo su historial.</small></span>
+      </label>` : ''}
       <div style="height:18px"></div>
       <button class="btn" type="submit">Guardar</button>
       ${ed ? `<div style="height:8px"></div><button class="btn dan" type="button" data-del>Borrar jugador</button>` : ''}
@@ -776,6 +783,308 @@ function formJugador(p) {
       toast(r.desactivado ? 'Estaba en partidos: quedó como inactivo' : 'Jugador borrado');
       router();
     });
+  });
+}
+
+/* ------------------------------------------------------------ asistencia */
+
+/* Un entrenamiento es una fecha y una lista de presentes. Marcar es un toque
+   por jugador y se guarda solo, así se puede ir marcando mientras llegan. */
+
+const DIAS_SEM = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+function partesFecha(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return { y, m, d, dow: new Date(Date.UTC(y, m - 1, d)).getUTCDay() };
+}
+// "2026-09-23" -> "miércoles 23/9"
+function diaLargo(iso) {
+  const { m, d, dow } = partesFecha(iso);
+  return `${DIAS_SEM[dow]} ${d}/${m}`;
+}
+function diaCorto(iso) {
+  const { m, d } = partesFecha(iso);
+  return `${d}/${m}`;
+}
+function hoyISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function sumarDias(iso, n) {
+  const { y, m, d } = partesFecha(iso);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+async function viewAsistencia() {
+  const { entrenamientos, activos } = await api('/trainings');
+
+  const fila = (t) => {
+    const { d, dow } = partesFecha(t.fecha);
+    const pct = activos ? Math.round((t.presentes / activos) * 100) : 0;
+    return `
+      <div class="card tap" data-t="${t.id}" style="padding:11px 13px">
+        <div class="row">
+          <span class="fecha-chip"><b>${d}</b><span>${DIAS_SEM[dow].slice(0, 3)}</span></span>
+          <span class="grow trunc">
+            <span style="font-weight:600;text-transform:capitalize">${esc(diaLargo(t.fecha))}</span>
+            <span class="muted trunc" style="display:block">${t.presentes} ${t.presentes === 1 ? 'presente' : 'presentes'}</span>
+          </span>
+          <span class="pct">${pct}%</span>
+        </div>
+      </div>`;
+  };
+
+  shell({
+    titulo: 'Asistencia',
+    sub: `${activos} ${activos === 1 ? 'jugador activo' : 'jugadores activos'}`,
+    tab: 'asistencia',
+    fab: true,
+    contenido: `
+      <button class="btn sec" data-informe>Informe de la semana</button>
+      <div class="sec-title">Entrenamientos</div>
+      ${entrenamientos.length
+        ? entrenamientos.map(fila).join('')
+        : '<div class="empty">Todavía no se tomó asistencia. Tocá el + para el entrenamiento de hoy.</div>'}`,
+  });
+
+  $('[data-informe]').onclick = () => { location.hash = '#/informe'; };
+  $('[data-fab]').onclick = () => sheetNuevoEntrenamiento();
+  app.querySelectorAll('[data-t]').forEach((el) => {
+    el.onclick = () => { location.hash = '#/asistencia/' + el.dataset.t; };
+  });
+}
+
+function sheetNuevoEntrenamiento() {
+  openSheet('Tomar asistencia', `
+    <label>Día del entrenamiento</label>
+    <input type="date" id="fe" value="${hoyISO()}" max="${sumarDias(hoyISO(), 30)}">
+    <div style="height:16px"></div>
+    <button class="btn" data-ok>Empezar</button>
+  `, (w) => {
+    w.querySelector('[data-ok]').onclick = async () => {
+      const fecha = w.querySelector('#fe').value;
+      if (!fecha) return toast('Elegí el día', true);
+      try {
+        const t = await api('/trainings', { method: 'POST', body: { fecha } });
+        closeSheet();
+        if (t.existia) toast('Ese día ya estaba empezado');
+        location.hash = '#/asistencia/' + t.id;
+      } catch (err) { toast(err.message, true); }
+    };
+  });
+}
+
+async function viewEntrenamiento(id) {
+  const t = await api('/trainings/' + id);
+  let filtro = '';
+
+  const cuenta = () => t.jugadores.filter((j) => j.presente).length;
+
+  const filaJug = (j) => `
+    <button class="asis${j.presente ? ' si' : ''}" data-j="${j.id}">
+      <span class="tick">${j.presente ? '✓' : ''}</span>
+      <span class="grow trunc">
+        <span style="font-weight:600">${esc(nombreCompleto(j))}</span>
+        ${j.apodo || !j.activo ? `<span class="muted trunc" style="display:block">${
+          [j.apodo ? esc(j.apodo) : '', j.activo ? '' : 'inactivo'].filter(Boolean).join(' · ')}</span>` : ''}
+      </span>
+    </button>`;
+
+  const listaHTML = () => {
+    const q = norm(filtro.trim());
+    const vis = q
+      ? t.jugadores.filter((j) => norm(j.apellido).includes(q) || norm(j.nombre).includes(q) || norm(j.apodo).includes(q))
+      : t.jugadores;
+    return vis.length ? vis.map(filaJug).join('') : '<div class="empty">Nadie con ese nombre.</div>';
+  };
+
+  // El contador vive en la cabecera fija: se ve mientras scrolleás la lista
+  const pintarCuenta = () => {
+    const n = cuenta();
+    const el = document.querySelector('.cabecera .sub');
+    if (el) el.textContent = `${n} de ${t.jugadores.length} presentes`;
+    const b = $('[data-todos]');
+    if (b) b.textContent = n === t.jugadores.length ? 'Destildar todos' : 'Marcar todos';
+  };
+
+  shell({
+    titulo: diaLargo(t.fecha),
+    sub: `${cuenta()} de ${t.jugadores.length} presentes`,
+    back: true,
+    tab: 'asistencia',
+    acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
+    bajo: `<div class="search" style="margin:0 12px 10px">${ICON.buscar}
+      <input id="qa" placeholder="Buscar jugador" autocomplete="off" enterkeyhint="done">
+    </div>`,
+    contenido: `
+      <div class="barra-asis">
+        <b>Tocá a cada uno que vino</b>
+        <button class="link" data-todos>${cuenta() === t.jugadores.length ? 'Destildar todos' : 'Marcar todos'}</button>
+      </div>
+      <div id="lista-asis">${listaHTML()}</div>`,
+  });
+
+  const handlers = () => {
+    app.querySelectorAll('[data-j]').forEach((b) => {
+      b.onclick = () => tocarJugador(Number(b.dataset.j), b);
+    });
+  };
+
+  const tocarJugador = async (playerId, boton) => {
+    const j = t.jugadores.find((x) => x.id === playerId);
+    const nuevo = !j.presente;
+    // Se pinta al instante y después se guarda: si falla, se vuelve atrás
+    j.presente = nuevo;
+    boton.classList.toggle('si', nuevo);
+    boton.querySelector('.tick').textContent = nuevo ? '✓' : '';
+    pintarCuenta();
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+    try {
+      await api(`/trainings/${t.id}/asistencia/${playerId}`, { method: 'PUT', body: { presente: nuevo } });
+    } catch (err) {
+      j.presente = !nuevo;
+      boton.classList.toggle('si', !nuevo);
+      boton.querySelector('.tick').textContent = !nuevo ? '✓' : '';
+      pintarCuenta();
+      toast(err.message, true);
+    }
+  };
+
+  const qa = $('#qa');
+  qa.oninput = () => {
+    filtro = qa.value;
+    $('#lista-asis').innerHTML = listaHTML();
+    handlers();
+  };
+
+  $('[data-todos]').onclick = async () => {
+    const todos = cuenta() !== t.jugadores.length;
+    try {
+      await api(`/trainings/${t.id}/asistencia`, { method: 'PUT', body: { todos } });
+      t.jugadores.forEach((j) => { j.presente = todos && j.activo ? true : todos ? j.presente : false; });
+      $('#lista-asis').innerHTML = listaHTML();
+      handlers();
+      pintarCuenta();
+    } catch (err) { toast(err.message, true); }
+  };
+
+  $('[data-menu]').onclick = () => {
+    openSheet('Opciones', `
+      <button class="btn sec" data-a="informe">Ver el informe de la semana</button>
+      <div style="height:8px"></div>
+      <button class="btn dan" data-a="borrar">Borrar este entrenamiento</button>
+    `, (w) => {
+      w.querySelectorAll('[data-a]').forEach((b) => {
+        b.onclick = () => {
+          const a = b.dataset.a;
+          closeSheet();
+          if (a === 'informe') return (location.hash = '#/informe/' + t.fecha);
+          confirmar(`¿Borrar el entrenamiento del ${diaLargo(t.fecha)}?`, async () => {
+            await api('/trainings/' + t.id, { method: 'DELETE' });
+            toast('Borrado');
+            location.hash = '#/asistencia';
+          });
+        };
+      });
+    });
+  };
+
+  handlers();
+}
+
+async function viewInforme(semana) {
+  const r = await api('/trainings/informe' + (semana ? '?semana=' + encodeURIComponent(semana) : ''));
+  const total = r.entrenamientos.length;
+
+  const grupos = [];
+  for (let n = total; n >= 1; n--) {
+    const g = r.jugadores.filter((j) => j.asistencias === n);
+    if (g.length) grupos.push({ titulo: `${n} de ${total}`, jugadores: g, lleno: n === total });
+  }
+  const faltaron = r.jugadores.filter((j) => j.asistencias === 0);
+
+  const filaJug = (j, lleno) => `
+    <div class="card" style="padding:10px 13px;margin-bottom:6px">
+      <div class="row">
+        <span class="ini-chica${lleno ? ' full' : ''}">${esc(iniciales(j))}</span>
+        <span class="grow trunc">
+          <span style="font-weight:600">${esc(nombreCompleto(j))}</span>
+          ${j.activo ? '' : '<span class="muted trunc" style="display:block">inactivo</span>'}
+        </span>
+        <span class="pct">${j.asistencias}/${total || 0}</span>
+      </div>
+    </div>`;
+
+  shell({
+    titulo: 'Informe semanal',
+    sub: `Del ${diaCorto(r.desde)} al ${diaCorto(r.hasta)}`,
+    back: true,
+    tab: 'asistencia',
+    contenido: `
+      <div class="semana-nav">
+        <button data-sem="${sumarDias(r.desde, -7)}" aria-label="Semana anterior">&#8249;</button>
+        <b>${diaCorto(r.desde)} al ${diaCorto(r.hasta)}</b>
+        <button data-sem="${sumarDias(r.desde, 7)}" aria-label="Semana siguiente">&#8250;</button>
+      </div>
+
+      ${total ? `
+        <div class="progreso">
+          <span class="chip">${total} ${total === 1 ? 'entrenamiento' : 'entrenamientos'}</span>
+          <span class="chip">Promedio ${r.promedio}</span>
+          <span class="chip b">${r.activos} activos</span>
+        </div>
+        <div class="sec-title">Los días</div>
+        ${r.entrenamientos.map((e) => `
+          <div class="card tap" data-t="${e.id}" style="padding:10px 13px">
+            <div class="row">
+              <span class="grow trunc" style="font-weight:600;text-transform:capitalize">${esc(diaLargo(e.fecha))}</span>
+              <span class="pct">${e.presentes}</span>
+            </div>
+          </div>`).join('')}
+
+        ${grupos.map((g) => `
+          <div class="sec-title">${esc(g.titulo)}<span>${g.jugadores.length}</span></div>
+          ${g.jugadores.map((j) => filaJug(j, g.lleno)).join('')}`).join('')}
+
+        ${faltaron.length ? `
+          <div class="sec-title">No vinieron<span>${faltaron.length}</span></div>
+          ${faltaron.map((j) => filaJug(j, false)).join('')}` : ''}
+
+        <div style="height:12px"></div>
+        <button class="btn" data-wa>Mandar por WhatsApp</button>
+      ` : '<div class="empty">No hay entrenamientos cargados en esta semana.</div>'}`,
+  });
+
+  app.querySelectorAll('[data-sem]').forEach((b) => {
+    b.onclick = () => { location.hash = '#/informe/' + b.dataset.sem; };
+  });
+  app.querySelectorAll('[data-t]').forEach((b) => {
+    b.onclick = () => { location.hash = '#/asistencia/' + b.dataset.t; };
+  });
+  const wa = $('[data-wa]');
+  if (wa) wa.onclick = () => sheetTexto('Informe de la semana', r.texto);
+}
+
+/* Hoja para mandar un texto por WhatsApp o copiarlo */
+function sheetTexto(titulo, texto) {
+  openSheet(titulo, `
+    <div class="export-box" id="tx"></div>
+    <div style="height:12px"></div>
+    <button class="btn" data-wa>Enviar por WhatsApp</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" data-copy>Copiar texto</button>
+  `, (w) => {
+    const caja = w.querySelector('#tx');
+    caja.textContent = texto;
+    w.querySelector('[data-wa]').onclick = () => {
+      window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+    };
+    w.querySelector('[data-copy]').onclick = async () => {
+      try { await navigator.clipboard.writeText(texto); toast('Copiado'); }
+      catch { toast('No se pudo copiar', true); }
+    };
   });
 }
 
@@ -1803,6 +2112,10 @@ async function router() {
     if (h.startsWith('#/vivo/')) return await viewVivo(h.split('/')[2]);
     if (h.startsWith('#/vivo')) return await viewVivo();
     if (h.startsWith('#/partido/')) return await viewPartido(h.split('/')[2]);
+    if (h.startsWith('#/informe/')) return await viewInforme(h.split('/')[2]);
+    if (h.startsWith('#/informe')) return await viewInforme();
+    if (h.startsWith('#/asistencia/')) return await viewEntrenamiento(h.split('/')[2]);
+    if (h.startsWith('#/asistencia')) return await viewAsistencia();
     if (h.startsWith('#/jugadores')) return await viewJugadores();
     if (h.startsWith('#/usuarios')) return await viewUsuarios();
     return await viewPartidos();

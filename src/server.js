@@ -314,6 +314,246 @@ app.delete(
   })
 );
 
+/* ------------------------------------------------------------- asistencia */
+
+/* Un entrenamiento es una fecha. Estar presente es tener la fila en
+   training_attendance: el ausente no está. Así marcar es un toque y el
+   informe sale de contar filas. */
+
+const ES_FECHA = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+// Lunes de la semana a la que pertenece esa fecha (la semana va lunes a domingo)
+function lunesDe(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay(); // 0 domingo ... 6 sábado
+  dt.setUTCDate(dt.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+  return dt.toISOString().slice(0, 10);
+}
+function masDias(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+const hoyISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+// "2026-09-23" -> "miércoles 23/9"
+function diaLegible(iso, conDia = true) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const nombre = DIAS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return conDia ? `${nombre} ${d}/${m}` : `${d}/${m}`;
+}
+
+const activosCount = () =>
+  db.prepare('SELECT COUNT(*) AS n FROM players WHERE activo = 1').get().n;
+
+app.get(
+  '/api/trainings',
+  auth,
+  wrap((req, res) => {
+    const filas = db
+      .prepare(
+        `SELECT t.id, t.fecha, t.notas,
+                (SELECT COUNT(*) FROM training_attendance a WHERE a.training_id = t.id) AS presentes
+           FROM trainings t
+          ORDER BY t.fecha DESC
+          LIMIT 60`
+      )
+      .all();
+    res.json({ entrenamientos: filas, activos: activosCount() });
+  })
+);
+
+// Crear el entrenamiento de una fecha, o devolver el que ya está
+app.post(
+  '/api/trainings',
+  auth,
+  wrap((req, res) => {
+    const fecha = clean(req.body.fecha || '');
+    if (!ES_FECHA(fecha)) return res.status(400).json({ error: 'Fecha inválida' });
+    const ya = db.prepare('SELECT * FROM trainings WHERE fecha = ?').get(fecha);
+    if (ya) return res.json({ ...ya, existia: true });
+    const info = db
+      .prepare('INSERT INTO trainings (fecha, created_by) VALUES (?, ?)')
+      .run(fecha, req.user.id);
+    res.status(201).json({ id: info.lastInsertRowid, fecha, existia: false });
+  })
+);
+
+// El informe va antes de /:id para que "informe" no se lea como un id
+app.get(
+  '/api/trainings/informe',
+  auth,
+  wrap((req, res) => {
+    const ref = ES_FECHA(req.query.semana || '') ? req.query.semana : hoyISO();
+    const desde = lunesDe(ref);
+    const hasta = masDias(desde, 6);
+
+    const entrenamientos = db
+      .prepare(
+        `SELECT t.id, t.fecha,
+                (SELECT COUNT(*) FROM training_attendance a WHERE a.training_id = t.id) AS presentes
+           FROM trainings t
+          WHERE t.fecha BETWEEN ? AND ?
+          ORDER BY t.fecha`
+      )
+      .all(desde, hasta);
+
+    // Entran los activos y también quien vino esa semana aunque después se dio de baja
+    const jugadores = db
+      .prepare(
+        `SELECT p.id, p.nombre, p.apellido, p.apodo, p.activo,
+                (SELECT COUNT(*) FROM training_attendance a
+                   JOIN trainings t ON t.id = a.training_id
+                  WHERE a.player_id = p.id AND t.fecha BETWEEN ? AND ?) AS asistencias
+           FROM players p
+          WHERE p.activo = 1
+             OR EXISTS (SELECT 1 FROM training_attendance a
+                          JOIN trainings t ON t.id = a.training_id
+                         WHERE a.player_id = p.id AND t.fecha BETWEEN ? AND ?)
+          ORDER BY p.apellido COLLATE NOCASE, p.nombre COLLATE NOCASE`
+      )
+      .all(desde, hasta, desde, hasta);
+
+    const total = entrenamientos.length;
+    const sumaPresentes = entrenamientos.reduce((a, e) => a + e.presentes, 0);
+    const promedio = total ? Math.round((sumaPresentes / total) * 10) / 10 : 0;
+
+    res.json({
+      desde, hasta, entrenamientos, jugadores,
+      activos: activosCount(),
+      promedio,
+      texto: textoInforme({ desde, hasta, entrenamientos, jugadores, promedio }),
+    });
+  })
+);
+
+function textoInforme({ desde, hasta, entrenamientos, jugadores, promedio }) {
+  const l = [];
+  l.push(`*ASISTENCIA ${CLUB.toUpperCase()}*`);
+  l.push(`Semana del ${diaLegible(desde, false)} al ${diaLegible(hasta, false)}`);
+  l.push('');
+
+  if (!entrenamientos.length) {
+    l.push('No se cargó ningún entrenamiento esta semana.');
+    return l.join('\n');
+  }
+
+  const total = entrenamientos.length;
+  l.push(`${total} ${total === 1 ? 'entrenamiento' : 'entrenamientos'}: ${
+    entrenamientos.map((e) => `${diaLegible(e.fecha)} (${e.presentes})`).join(' · ')}`);
+  l.push(`Promedio: ${promedio} jugadores por entrenamiento`);
+  l.push('');
+
+  // Agrupados por cuántos fueron: se lee de un vistazo quién está enganchado
+  for (let n = total; n >= 1; n--) {
+    const grupo = jugadores.filter((j) => j.asistencias === n);
+    if (!grupo.length) continue;
+    l.push(`*${n} de ${total}*`);
+    for (const j of grupo) l.push(`${j.apellido}, ${j.nombre}`);
+    l.push('');
+  }
+  const faltaron = jugadores.filter((j) => j.asistencias === 0);
+  if (faltaron.length) {
+    l.push('*No vinieron*');
+    for (const j of faltaron) l.push(`${j.apellido}, ${j.nombre}`);
+  }
+  return l.join('\n').trim();
+}
+
+app.get(
+  '/api/trainings/:id',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const t = db.prepare('SELECT * FROM trainings WHERE id = ?').get(id);
+    if (!t) return res.status(404).json({ error: 'Entrenamiento no encontrado' });
+    // Los inactivos no aparecen, salvo que ya estén marcados en este entrenamiento
+    const jugadores = db
+      .prepare(
+        `SELECT p.id, p.nombre, p.apellido, p.apodo, p.activo,
+                (SELECT COUNT(*) FROM training_attendance a
+                  WHERE a.training_id = ? AND a.player_id = p.id) AS presente
+           FROM players p
+          WHERE p.activo = 1
+             OR EXISTS (SELECT 1 FROM training_attendance a
+                         WHERE a.training_id = ? AND a.player_id = p.id)
+          ORDER BY p.apellido COLLATE NOCASE, p.nombre COLLATE NOCASE`
+      )
+      .all(id, id);
+    res.json({
+      ...t,
+      jugadores: jugadores.map((j) => ({ ...j, presente: !!j.presente })),
+      presentes: jugadores.filter((j) => j.presente).length,
+    });
+  })
+);
+
+// Marcar o limpiar a todos de una: si vino el plantel entero son dos toques
+app.put(
+  '/api/trainings/:id/asistencia',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    if (!db.prepare('SELECT id FROM trainings WHERE id = ?').get(id))
+      return res.status(404).json({ error: 'Entrenamiento no encontrado' });
+    if (req.body.todos) {
+      const ins = db.prepare(
+        `INSERT INTO training_attendance (training_id, player_id, marked_by)
+         VALUES (?, ?, ?) ON CONFLICT(training_id, player_id) DO NOTHING`
+      );
+      const activos = db.prepare('SELECT id FROM players WHERE activo = 1').all();
+      db.transaction(() => { for (const p of activos) ins.run(id, p.id, req.user.id); })();
+    } else {
+      db.prepare('DELETE FROM training_attendance WHERE training_id = ?').run(id);
+    }
+    const presentes = db
+      .prepare('SELECT COUNT(*) AS n FROM training_attendance WHERE training_id = ?')
+      .get(id).n;
+    res.json({ presentes });
+  })
+);
+
+app.put(
+  '/api/trainings/:id/asistencia/:playerId',
+  auth,
+  wrap((req, res) => {
+    const id = Number(req.params.id);
+    const playerId = Number(req.params.playerId);
+    if (!db.prepare('SELECT id FROM trainings WHERE id = ?').get(id))
+      return res.status(404).json({ error: 'Entrenamiento no encontrado' });
+    if (!db.prepare('SELECT id FROM players WHERE id = ?').get(playerId))
+      return res.status(404).json({ error: 'Jugador no encontrado' });
+
+    const presente = !!req.body.presente;
+    if (presente) {
+      db.prepare(
+        `INSERT INTO training_attendance (training_id, player_id, marked_by)
+         VALUES (?, ?, ?) ON CONFLICT(training_id, player_id) DO NOTHING`
+      ).run(id, playerId, req.user.id);
+    } else {
+      db.prepare('DELETE FROM training_attendance WHERE training_id = ? AND player_id = ?')
+        .run(id, playerId);
+    }
+    const presentes = db
+      .prepare('SELECT COUNT(*) AS n FROM training_attendance WHERE training_id = ?')
+      .get(id).n;
+    res.json({ presente, presentes });
+  })
+);
+
+app.delete(
+  '/api/trainings/:id',
+  auth,
+  wrap((req, res) => {
+    db.prepare('DELETE FROM trainings WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
+  })
+);
+
 /* ---------------------------------------------------------------- matches */
 
 function rosterDe(matchId) {

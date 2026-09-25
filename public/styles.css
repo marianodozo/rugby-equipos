@@ -446,6 +446,75 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
 }
 .ficha.entro em { color: var(--verde-ok); }
 
+/* ------------------------------------------------------------ asistencia */
+
+.fecha-chip {
+  flex: 0 0 40px; text-align: center; background: var(--marca-claro);
+  border-radius: 10px; padding: 4px 0 3px; color: var(--marca);
+}
+.fecha-chip b { display: block; font-size: 17px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
+.fecha-chip span { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+
+.pct { flex: 0 0 auto; font-size: 14px; font-weight: 700; color: var(--marca); font-variant-numeric: tabular-nums; }
+
+.barra-asis {
+  display: flex; align-items: center; gap: 10px; margin: 0 2px 10px;
+}
+.barra-asis b { flex: 1; font-size: 12.5px; font-weight: 500; color: var(--txt-2); }
+.link {
+  background: transparent; border: 0; cursor: pointer; padding: 6px 2px;
+  font: 650 13px/1 inherit; color: var(--marca); text-decoration: underline;
+}
+
+/* Cada jugador es un botón grande: se marca mientras van llegando */
+.asis {
+  width: 100%; display: flex; align-items: center; gap: 11px; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 7px; min-height: 56px;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.asis:active { transform: scale(.995); filter: brightness(.97); }
+.asis .tick {
+  flex: 0 0 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--line); background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #fff; line-height: 1;
+}
+.asis.si {
+  border-color: color-mix(in srgb, var(--verde-ok) 45%, transparent);
+  background: color-mix(in srgb, var(--verde-ok) 9%, var(--card));
+}
+.asis.si .tick { background: var(--verde-ok); border-color: var(--verde-ok); }
+
+.semana-nav {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px;
+}
+.semana-nav b { flex: 1; text-align: center; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.semana-nav button {
+  flex: 0 0 42px; height: 38px; border-radius: 9px; border: 0; cursor: pointer;
+  background: var(--marca-claro); color: var(--marca); font-size: 20px; line-height: 1;
+}
+
+.ini-chica {
+  flex: 0 0 32px; height: 32px; border-radius: 50%; background: var(--marca-claro);
+  color: var(--marca); font-weight: 700; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.ini-chica.full { background: color-mix(in srgb, var(--verde-ok) 15%, var(--card)); color: var(--verde-ok); }
+
+.card.inactivo { opacity: .6; }
+.card.inactivo .chip { flex: 0 0 auto; }
+
+/* Casilla con explicación al lado, para las opciones que no son obvias */
+label.check {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-weight: 400; cursor: pointer;
+}
+label.check input { width: auto; margin: 2px 0 0; flex: 0 0 auto; transform: scale(1.25); }
+label.check b { display: block; font-size: 15px; font-weight: 600; }
+label.check small { display: block; font-size: 12.5px; color: var(--txt-2); line-height: 1.45; margin-top: 2px; }
+
 .toast-undo {
   background: rgba(255,255,255,.2); color: #fff; border: 0; cursor: pointer;
   font: 650 13px/1 inherit; padding: 7px 12px; border-radius: 999px; margin-left: 6px;

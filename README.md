@@ -16,6 +16,7 @@ de los bots que ya tenés en el EC2 y consume muy pocos recursos: se despliega c
 - **Armado del plantel**: 25 lugares con **posición fija por número** (1 pilar izquierdo, 2 hooker, 9 medio scrum, 10 apertura, etc.). Cada asignación se guarda al instante, así que podés cargar el equipo en varios momentos, desde varios celulares.
 - **Export a WhatsApp**: genera el listado numerado del 1 al 25 con nombre, apellido y DNI, con botón para copiar o abrir WhatsApp directamente.
 - **Seguimiento en vivo** (pestaña *En vivo*): cronómetro de los dos tiempos, marcador, puntos con jugador, tarjetas con cuenta regresiva y cronología del partido.
+- **Asistencia** (pestaña *Asistencia*): un toque por jugador que vino, y el informe de la semana listo para mandar al grupo.
 
 ### Cómo se asigna un jugador (lo más usado)
 
@@ -106,6 +107,34 @@ los terminados quedan en *Anteriores* con el resultado. Desde cualquiera de los
 dos se exporta a WhatsApp, eligiendo entre **Plantel** (el listado 1-25) y
 **Resumen** (resultado, quién hizo los puntos, las formaciones con sus
 porcentajes, los penales cometidos, las tarjetas y los cambios).
+
+### Asistencia a los entrenamientos
+
+La pestaña **Asistencia** reemplaza la lista de papel:
+
+- Un **entrenamiento es una fecha** (uno por día). El + abre el de hoy, o elegís
+  otro día; si esa fecha ya estaba empezada, entrás a la misma y seguís.
+- Adentro está la lista de **jugadores activos**, ordenada por apellido. **Un
+  toque marca presente** y se guarda solo, así se va marcando mientras llegan.
+  El contador de la cabecera queda fijo mientras scrolleás.
+- **Marcar todos** para el día que vino el plantel entero: tildás todos y
+  destildás los dos que faltaron.
+- Estar presente es tener la fila en la base; el ausente simplemente no está.
+  Por eso no hay estados intermedios ni un "guardar" al final.
+- Los **inactivos no aparecen**, salvo que ya estuvieran marcados en ese
+  entrenamiento (si diste de baja a alguien después de un entreno, no se borra
+  lo que ya pasó).
+
+**Informe de la semana**: la semana va de lunes a domingo y se navega con las
+flechas. Muestra los días con cuánta gente vino, el promedio, y a los jugadores
+agrupados por cuántos entrenamientos hicieron —primero los que fueron a todos,
+al final los que no vinieron a ninguno—. El botón arma el texto para WhatsApp.
+
+Para dar de baja a alguien: **Jugadores → tocás al jugador → destildás "Activo
+en el club"**. No aparece más en la asistencia ni al armar los partidos, pero se
+guarda todo su historial y queda listado abajo de todo como *Inactivo*. Borrarlo
+del todo solo se puede si nunca jugó un partido; si jugó, la app lo pasa a
+inactivo en vez de borrarlo.
 
 ### Compartir
 

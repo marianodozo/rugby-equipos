@@ -112,6 +112,31 @@ agregarColumna('match_events', 'detalle', 'TEXT');
 // Cambios: player_id es el que entra, player_2_id el que sale
 agregarColumna('match_events', 'player_2_id', 'INTEGER REFERENCES players(id) ON DELETE SET NULL');
 
+/* Asistencia a los entrenamientos.
+   Un entrenamiento es una fecha (uno por día). Estar presente es tener la
+   fila: el ausente simplemente no está, así marcar es un solo toque y no hay
+   estados intermedios que mantener. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS trainings (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha      TEXT NOT NULL UNIQUE,   -- YYYY-MM-DD
+  notas      TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS training_attendance (
+  training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+  player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  marked_by   INTEGER REFERENCES users(id),
+  marked_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (training_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trainings_fecha ON trainings(fecha);
+CREATE INDEX IF NOT EXISTS idx_asistencia_jugador ON training_attendance(player_id);
+`);
+
 // Usuario inicial
 const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 if (count === 0) {
