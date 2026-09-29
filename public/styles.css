@@ -549,7 +549,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--marca); }
   font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px;
   border-radius: 999px; background: var(--marca-claro); color: var(--marca);
 }
-.bloque .tags span.pf { background: color-mix(in srgb, var(--verde-ok) 13%, var(--card)); color: var(--verde-ok); }
+.bloque .tags span.a-verde  { background: color-mix(in srgb, var(--verde-ok) 13%, var(--card)); color: var(--verde-ok); }
+.bloque .tags span.a-marca  { background: var(--marca-claro); color: var(--marca); }
+.bloque .tags span.a-acento { background: var(--acento-claro); color: var(--acento); }
+.bloque .tags span.a-ambar  { background: color-mix(in srgb, var(--ambar) 14%, var(--card)); color: var(--ambar); }
 .bloque .tags span.lider { background: transparent; border: 1px solid var(--line); color: var(--txt-2); font-weight: 600; }
 .bloque .mins {
   flex: 0 0 auto; font-size: 16px; font-weight: 750; color: var(--marca);

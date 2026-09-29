@@ -352,7 +352,7 @@ const activosCount = () =>
 
 /* Áreas de la planificación. Para cambiarlas, editá solo esta lista: lo que
    figura acá es lo que se guarda y lo que sale en la placa. */
-const AREAS = ['PF', 'TAC'];
+const AREAS = ['PF', 'TAC', 'Tec', 'Juego'];
 
 const bloquesDe = (trainingId) =>
   db.prepare('SELECT * FROM training_blocks WHERE training_id = ? ORDER BY orden, id').all(trainingId);

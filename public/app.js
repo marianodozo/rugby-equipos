@@ -1016,6 +1016,11 @@ function sheetObjetivo(t) {
   });
 }
 
+/* Cada área tiene su color, en la pantalla y en la placa. Para sumar una
+   nueva, agregala en AREAS (src/server.js) y acá si querés un color propio. */
+const COLOR_AREA = { PF: 'verde', TAC: 'marca', TEC: 'acento', JUEGO: 'ambar' };
+const claseArea = (a) => 'a-' + (COLOR_AREA[String(a).toUpperCase()] || 'marca');
+
 /* ------------------------------------------------------------ plan del día */
 
 function panelPlan(t) {
@@ -1027,7 +1032,7 @@ function panelPlan(t) {
         <span style="font-weight:600">${esc(b.actividad)}</span>
         ${b.foco ? `<span class="muted trunc" style="display:block">${esc(b.foco)}</span>` : ''}
         <span class="tags">
-          <span class="${b.area === 'PF' ? 'pf' : ''}">${esc(b.area)}</span>
+          <span class="${claseArea(b.area)}">${esc(b.area)}</span>
           ${b.lider ? `<span class="lider">${esc(b.lider)}</span>` : ''}
         </span>
       </span>
@@ -1361,7 +1366,8 @@ async function imagenPlan(t) {
   const g = c.getContext('2d');
 
   const AZUL = '#1d2450', AZUL2 = '#293263';
-  const BLANCO = '#ffffff', TENUE = '#a8b0d4', VERDE = '#6fd8b0', GRIS = '#f3f4f8';
+  const BLANCO = '#ffffff', TENUE = '#a8b0d4', GRIS = '#f3f4f8';
+  const TINTA_AREA = { PF: '#6fd8b0', TAC: '#293263', TEC: '#c86a96', JUEGO: '#d9a05b' };
   const FUENTE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
   g.fillStyle = GRIS;
@@ -1414,7 +1420,7 @@ async function imagenPlan(t) {
     g.beginPath(); g.roundRect(48, y, W - 96, ALTO_FILA - 14, 16); g.fill();
 
     // franja del área, que reemplaza a la columna del Excel
-    g.fillStyle = b.area === 'PF' ? VERDE : AZUL2;
+    g.fillStyle = TINTA_AREA[String(b.area).toUpperCase()] || AZUL2;
     g.beginPath(); g.roundRect(48, y, 10, ALTO_FILA - 14, [16, 0, 0, 16]);
     g.fill();
 
@@ -1800,10 +1806,6 @@ function panelPuntos(v) {
     <div class="grid-puntos">
       ${TIPOS_PUNTO.map((t) => `
         <button class="btn punto" data-punto="${t.k}"><span>${t.n}</span><small>+${t.p}</small></button>`).join('')}
-      <button class="btn punto tarjeta" data-penal>
-        <span>Penal cometido</span><small>${LADO === 'rival' ? esc(p.rival) : 'elegís el tipo'}</small>
-      </button>
-      <button class="btn punto tarjeta" data-tarj><span>Tarjeta</span><small>🟨 🟥</small></button>
     </div>
 
     <div class="sec-title">Partido</div>
@@ -1830,10 +1832,24 @@ function panelFormaciones(v) {
   if (robadas) chips.push(`<span class="chip">Robadas ${robadas}</span>`);
   if (f.knock_on) chips.push(`<span class="chip b">Knock on ${f.knock_on}</span>`);
   if (v.penales.nosotros) chips.push(`<span class="chip b">Penales ${v.penales.nosotros}</span>`);
+  if (v.penales.rival) chips.push(`<span class="chip b">Penales rival ${v.penales.rival}</span>`);
 
   return `
     ${chips.length ? `<div class="progreso">${chips.join('')}</div>` : ''}
 
+    <div class="sec-title">Penales y tarjetas</div>
+    <div class="grid-puntos">
+      <button class="btn punto tarjeta" data-penal="nosotros">
+        <span>Penal cometido</span><small>elegís el tipo</small>
+      </button>
+      <button class="btn punto tarjeta" data-penal="rival">
+        <span>Penal del rival</span><small>${esc(v.partido.rival)}</small>
+      </button>
+    </div>
+    <div style="height:7px"></div>
+    <button class="btn sec" data-tarj>Tarjeta &nbsp;🟨 🟥</button>
+
+    <div class="sec-title">Formaciones</div>
     ${FORMACIONES.map((F) => {
       const o = f[F.k];
       return `
@@ -1862,7 +1878,7 @@ function panelFormaciones(v) {
     </div>
 
     <p class="muted" style="margin:4px 6px 0">
-      Todo se carga desde nuestro lado. Las formaciones del rival no se registran.
+      Las formaciones se cargan desde nuestro lado. Las del rival no se registran.
     </p>`;
 }
 
@@ -2066,9 +2082,6 @@ function handlersPuntos(v) {
   app.querySelectorAll('[data-punto]').forEach((b) => {
     b.onclick = () => tocarPunto(b.dataset.punto);
   });
-  $('[data-tarj]').onclick = () => sheetTarjeta();
-  $('[data-penal]').onclick = () => tocarPenal();
-
   const fp = $('[data-finperiodo]');
   if (fp) fp.onclick = () => confirmar(
     p.periodo <= 1 ? '¿Terminar el primer tiempo?' : '¿Terminar el partido?',
@@ -2088,6 +2101,11 @@ function handlersFormaciones() {
       cargarFormacion(b.dataset.f, b.dataset.r || null);
     };
   });
+  // Acá no está el selector de lado, así que cada botón dice de quién es
+  app.querySelectorAll('[data-penal]').forEach((b) => {
+    b.onclick = () => tocarPenal(b.dataset.penal);
+  });
+  $('[data-tarj]').onclick = () => sheetTarjeta();
 }
 
 function handlersCrono(v) {
@@ -2159,8 +2177,8 @@ function tocarPunto(tipo) {
 }
 
 // Penal cometido: del rival se cuenta y listo; el nuestro pide tipo y jugador
-function tocarPenal() {
-  if (LADO === 'rival') return cargarEvento('infraccion', 'rival', null);
+function tocarPenal(lado) {
+  if (lado === 'rival') return cargarEvento('infraccion', 'rival', null);
   openSheet('¿Qué penal fue?', `
     <div class="grid-penales">
       ${TIPOS_PENAL.map((t) => `<button class="btn sec" data-tp="${esc(t)}">${esc(t)}</button>`).join('')}

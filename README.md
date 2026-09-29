@@ -71,12 +71,16 @@ La pestaña **En vivo** sigue el partido desde la cancha:
 - **Tarjetas**: amarilla y roja, nuestras o del rival. La amarilla muestra
   cuánto le queda de los 10 minutos, contando **tiempo de juego**: si el reloj
   está parado, la sanción no corre.
-- **Formaciones**: scrum y line con **ganado, perdido y robado**, y knock on de un
-  toque. Todo se carga desde nuestro lado — las formaciones del rival no se
+- **Formaciones** (la pestaña donde va todo lo que no son puntos): scrum y line
+  con **ganado, perdido y robado**, y knock on de un toque. Todo se carga desde nuestro lado — las formaciones del rival no se
   registran — así que no hay que elegir equipo. El porcentaje sale de ganado
   sobre ganado más perdido; los robados se cuentan aparte, porque son mérito y
   no eficiencia propia. Cada toque se guarda al instante y el aviso de abajo
   trae **Deshacer** por si erraste el botón.
+- **Penales cometidos y tarjetas** viven en esa misma pestaña, arriba de los
+  contadores: el penal es lo que no puede esperar, el scrum se anota en la
+  pausa siguiente. Como ahí no está el selector de lado, hay un botón para el
+  penal nuestro y otro para el del rival.
 - **Penales cometidos**: los que comete el equipo, con el tipo de infracción
   (offside, no soltar, no rolar, manos en el ruck, entrada al costado, tackle
   alto, juego peligroso, obstrucción, scrum, line, antideportivo, otro) y el
@@ -118,8 +122,9 @@ la más nueva primero, con los minutos planificados de cada semana al costado.
 #### El plan
 
 - Cada bloque guarda lo mismo que la planilla: **área (PF o TAC), actividad,
-  foco, líder y minutos**. El número de bloque no se carga: es el orden, y se
-  renumera solo al mover uno con las flechitas o al borrar.
+  foco, líder y minutos**. Las áreas son **PF, TAC, Tec y Juego**, cada una con
+  su color en la pantalla y en la placa. El número de bloque no se carga: es el
+  orden, y se renumera solo al mover uno con las flechitas o al borrar.
 - Al cargar, **todo lo que ya usaste vuelve como botón**: actividades, líderes y
   duraciones salen de lo más usado, y los focos que se ofrecen son los que ya
   usaste con esa actividad. Después de dos o tres semanas se carga sin teclado.
@@ -132,8 +137,9 @@ la más nueva primero, con los minutos planificados de cada semana al costado.
   total, que se dibuja en el propio celular y sale por el menú de compartir del
   teléfono. También se puede mandar como texto. En la placa el área es la franja
   de color de la izquierda —verde PF, azul TAC—, porque seis columnas no se leen
-  en un teléfono. La lista de áreas se cambia en la constante `AREAS` de
-  `src/server.js`.
+  en un teléfono. Para sumar un área nueva: la constante `AREAS` de
+  `src/server.js`, y `COLOR_AREA` / `TINTA_AREA` en `public/app.js` si querés
+  que tenga color propio.
 
 #### La asistencia
 
