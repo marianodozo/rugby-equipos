@@ -287,6 +287,22 @@ crontab -e
 
 Guarda una copia comprimida por día en `backups/`, con retención de 14 días.
 
+### Corregir un typo que quedó como sugerencia
+
+Las sugerencias del plan (actividad, foco, líder) salen de lo que ya se cargó,
+así que un nombre mal escrito queda ahí como botón hasta que se arreglen los
+bloques. Para eso está `deploy/corregir-texto.sh`:
+
+```bash
+cd /home/ubuntu/rugby-equipos
+bash deploy/corregir-texto.sh lider Javu Javi
+```
+
+Primero muestra qué bloques va a tocar y pide confirmación; recién ahí cambia.
+Ignora mayúsculas, así que `Javu` y `javu` se arreglan juntos. Los campos que
+acepta son `actividad`, `foco` y `lider`. Cuando no queda ningún bloque con el
+texto viejo, la sugerencia desaparece sola.
+
 ### Si algo no arranca
 
 | Síntoma | Qué pasa |
@@ -321,7 +337,7 @@ docker-compose.yml   servicio app + perfil opcional "https" con Caddy
 src/server.js        API REST + sesiones + export
 src/db.js            esquema SQLite y usuario inicial
 public/              app mobile (HTML/CSS/JS, sin frameworks) + PWA
-deploy/              Caddyfile, nginx, backup, scripts de URL, systemd
+deploy/              Caddyfile, nginx, backup, corrección de textos, scripts de URL, systemd
 data/rugby.db        base de datos (se crea sola, fuera del repo)
 ```
 
