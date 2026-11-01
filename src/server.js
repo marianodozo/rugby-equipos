@@ -1114,6 +1114,7 @@ function vivoDe(matchId) {
       fecha_hora: m.fecha_hora, notas: m.notas, estado: m.estado,
       periodo: m.periodo, reloj_corriendo: m.reloj_corriendo,
       reloj_base_seg: m.reloj_base_seg, reloj_desde: m.reloj_desde,
+      reloj_parado_desde: m.reloj_parado_desde,
       primer_tiempo_seg: m.primer_tiempo_seg, share_token: m.share_token,
     },
     club: CLUB,
@@ -1149,6 +1150,7 @@ function publicoDe(m) {
       equipo: m.equipo, rival: m.rival, lugar: m.lugar, fecha_hora: m.fecha_hora,
       estado: m.estado, periodo: m.periodo, reloj_corriendo: m.reloj_corriendo,
       reloj_base_seg: m.reloj_base_seg, reloj_desde: m.reloj_desde,
+      reloj_parado_desde: m.reloj_parado_desde,
       primer_tiempo_seg: m.primer_tiempo_seg,
     },
     ahora: Date.now(),
@@ -1228,25 +1230,34 @@ app.post(
         periodo: m.periodo === 0 ? 1 : m.periodo,
         reloj_corriendo: 1,
         reloj_desde: Date.now(),
+        reloj_parado_desde: null,
       });
     } else if (accion === 'pausar') {
       if (!m.reloj_corriendo) return res.json(vivoDe(id));
-      set({ reloj_corriendo: 0, reloj_base_seg: segundosPeriodo(m), reloj_desde: null });
+      set({
+        reloj_corriendo: 0, reloj_base_seg: segundosPeriodo(m), reloj_desde: null,
+        reloj_parado_desde: Date.now(),
+      });
     } else if (accion === 'fin_periodo') {
       const seg = segundosPeriodo(m);
       if (m.periodo <= 1) {
         set({
           periodo: 2, primer_tiempo_seg: seg,
           reloj_corriendo: 0, reloj_base_seg: 0, reloj_desde: null,
+          reloj_parado_desde: null,
           estado: 'en_curso',
         });
       } else {
-        set({ periodo: 3, reloj_corriendo: 0, reloj_base_seg: seg, reloj_desde: null, estado: 'finalizado' });
+        set({
+          periodo: 3, reloj_corriendo: 0, reloj_base_seg: seg, reloj_desde: null,
+          reloj_parado_desde: null, estado: 'finalizado',
+        });
       }
     } else if (accion === 'finalizar') {
       set({
         estado: 'finalizado', periodo: 3,
         reloj_corriendo: 0, reloj_base_seg: segundosPeriodo(m), reloj_desde: null,
+        reloj_parado_desde: null,
       });
     } else if (accion === 'reabrir') {
       set({ estado: 'en_curso', periodo: m.periodo === 3 ? 2 : m.periodo || 1, reloj_corriendo: 0 });
@@ -1257,6 +1268,7 @@ app.post(
       set({
         estado: 'programado', periodo: 0, reloj_corriendo: 0,
         reloj_base_seg: 0, reloj_desde: null, primer_tiempo_seg: 0,
+        reloj_parado_desde: null,
       });
     } else {
       return res.status(400).json({ error: 'Acción desconocida' });

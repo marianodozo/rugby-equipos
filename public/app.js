@@ -163,6 +163,7 @@ const ICON = {
   vivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.2 1.6M9.5 2h5M18.6 5.6l1.4 1.4"/></svg>',
   ojo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   ojoTachado: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-6.5 10-6.5c1.7 0 3.2.4 4.5 1M22 12s-3.6 6.5-10 6.5c-1.7 0-3.2-.4-4.5-1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/><path d="M3 3l18 18"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V11M12 20V5M19 20v-6"/></svg>',
   asistencia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8.5h8M8 12.5h8M8 16.5h4"/></svg>',
 };
 
@@ -426,6 +427,8 @@ async function viewPartido(id) {
     <div style="height:10px"></div>
     <button class="btn sec" data-exportar>Exportar para WhatsApp</button>
     ${m.estado === 'programado' ? '' : `<div style="height:10px"></div>
+    <button class="btn sec" data-estadisticas>Ver las estadísticas</button>
+    <div style="height:10px"></div>
     <button class="btn sec" data-compartir>Compartir resultado o enlace</button>`}
     ${bloques}`;
 
@@ -445,6 +448,8 @@ async function viewPartido(id) {
   $('[data-vivo]').onclick = () => { location.hash = '#/vivo/' + m.id; };
   const bComp = $('[data-compartir]');
   if (bComp) bComp.onclick = () => sheetCompartir(m.id);
+  const bStats = $('[data-estadisticas]');
+  if (bStats) bStats.onclick = () => { location.hash = '#/stats/' + m.id; };
   $('[data-exportar]').onclick = () => exportar(m.id);
   $('[data-menu]').onclick = () => menuPartido(m);
 
@@ -1519,6 +1524,255 @@ function sheetTexto(titulo, texto) {
   });
 }
 
+
+/* ---------------------------------------------------------- estadísticas */
+
+/* Todo sale de los eventos que ya devuelve el vivo: cada uno trae su período,
+   así que filtrar por tiempo no necesita ningún dato nuevo. La pantalla sirve
+   igual con el partido en juego que tres semanas después. */
+
+let PERIODO_STATS = 0; // 0 = todo el partido, 1 y 2 los tiempos
+let STATS = null;
+
+function calcularStats(v, periodo) {
+  const ev = periodo ? v.eventos.filter((e) => e.periodo === periodo) : v.eventos;
+  const nuestros = ev.filter((e) => e.equipo !== 'rival');
+  const delRival = ev.filter((e) => e.equipo === 'rival');
+
+  const puntos = TIPOS_PUNTO.map((t) => ({
+    k: t.k, n: t.n,
+    nosotros: nuestros.filter((e) => e.tipo === t.k).length,
+    rival: delRival.filter((e) => e.tipo === t.k).length,
+  })).filter((f) => f.nosotros || f.rival);
+
+  const marcador = {
+    nosotros: nuestros.reduce((a, e) => a + e.puntos, 0),
+    rival: delRival.reduce((a, e) => a + e.puntos, 0),
+  };
+
+  const infrNuestras = nuestros.filter((e) => e.tipo === 'infraccion');
+  const contar = (lista, clave) => {
+    const m = {};
+    for (const e of lista) {
+      const k = clave(e);
+      if (k) m[k] = (m[k] || 0) + 1;
+    }
+    return Object.entries(m).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  };
+
+  const form = { scrum: { g: 0, p: 0, r: 0 }, line: { g: 0, p: 0, r: 0 }, knock_on: 0 };
+  for (const e of ev) {
+    if (e.tipo === 'knock_on') form.knock_on++;
+    else if (e.tipo === 'scrum' || e.tipo === 'line') {
+      form[e.tipo][e.detalle === 'perdido' ? 'p' : e.detalle === 'robado' ? 'r' : 'g']++;
+    }
+  }
+
+  return {
+    eventos: ev,
+    puntos,
+    marcador,
+    penales: {
+      nosotros: infrNuestras.length,
+      rival: delRival.filter((e) => e.tipo === 'infraccion').length,
+      porTipo: contar(infrNuestras, (e) => e.detalle || 'Sin especificar'),
+      porJugador: contar(infrNuestras, (e) => (e.apellido ? `${e.nombre} ${e.apellido}` : null)),
+      sinJugador: infrNuestras.filter((e) => !e.apellido).length,
+    },
+    formaciones: form,
+    tarjetas: ev.filter((e) => e.tipo === 'amarilla' || e.tipo === 'roja'),
+    cambios: ev.filter((e) => e.tipo === 'cambio'),
+  };
+}
+
+async function viewStats(id) {
+  const v = await api('/matches/' + id + '/vivo');
+  v.recibido = Date.now();
+  STATS = { id: Number(id), v };
+  pintarStats();
+  // Con el partido en juego los números se van moviendo solos
+  if (v.partido.estado === 'en_curso') {
+    POLL = setInterval(async () => {
+      try {
+        const nuevo = await api('/matches/' + id + '/vivo');
+        nuevo.recibido = Date.now();
+        STATS.v = nuevo;
+        pintarStats();
+      } catch (e) { /* si se cae la red, seguimos con lo que tenemos */ }
+    }, 10000);
+  }
+}
+
+function pintarStats() {
+  const v = STATS.v, p = v.partido;
+  const s = calcularStats(v, PERIODO_STATS);
+  const nos = nombreEquipo(p.equipo);
+  const hayAlgo = s.eventos.length > 0;
+
+  // Dos barras enfrentadas sobre la misma escala: el más alto ocupa todo
+  const comp = (nombre, a, b) => {
+    const max = Math.max(a, b, 1);
+    return `
+      <div class="comp">
+        <span class="cifra n">${a}</span>
+        <span class="pista">
+          <span class="lado izq"><i style="width:${(a / max) * 100}%"></i></span>
+          <span class="nom">${esc(nombre)}</span>
+          <span class="lado der"><i style="width:${(b / max) * 100}%"></i></span>
+        </span>
+        <span class="cifra r">${b}</span>
+      </div>`;
+  };
+
+  const ranking = (filas, azul) => {
+    const max = filas.length ? filas[0][1] : 1;
+    return filas.map(([nombre, n]) => `
+      <div class="barra">
+        <span class="tx">${esc(nombre)}</span>
+        <span class="pista${azul ? ' az' : ''}"><i style="width:${(n / max) * 100}%"></i></span>
+        <span class="n">${n}</span>
+      </div>`).join('');
+  };
+
+  const pct = (o) => (o.g + o.p ? Math.round((o.g / (o.g + o.p)) * 100) : null);
+  const dato = (valor, titulo, pie, ok) => `
+    <div class="dato${ok ? ' ok' : ''}">
+      <b>${valor}</b><span>${esc(titulo)}</span>${pie ? `<small>${esc(pie)}</small>` : ''}
+    </div>`;
+
+  const f = s.formaciones;
+  const pScrum = pct(f.scrum), pLine = pct(f.line);
+  const robadas = f.scrum.r + f.line.r;
+  const hayForm = f.scrum.g + f.scrum.p + f.line.g + f.line.p + robadas + f.knock_on > 0;
+
+  const contenido = `
+    <div class="segmento" style="margin-bottom:12px">
+      ${[[0, 'Todo'], [1, '1er tiempo'], [2, '2do tiempo']].map(([k, n]) =>
+        `<button data-per="${k}" class="${PERIODO_STATS === k ? 'on' : ''}">${n}</button>`).join('')}
+    </div>
+
+    ${!hayAlgo ? `<div class="empty">${PERIODO_STATS
+      ? 'No se cargó nada en este tiempo.'
+      : 'Todavía no se cargó nada en este partido.'}</div>` : `
+
+      <div class="sec-title">Cómo se hicieron los puntos</div>
+      <div class="tarj-stats">
+        ${s.puntos.length
+          ? s.puntos.map((t) => comp(t.n, t.nosotros, t.rival)).join('')
+          : '<div class="muted">Sin puntos en este tiempo.</div>'}
+        <div class="muted" style="font-size:12.5px">${esc(nos)} ${s.marcador.nosotros} · ${esc(p.rival)} ${s.marcador.rival}</div>
+      </div>
+
+      <div class="sec-title">Penales cometidos<span>${s.penales.nosotros + s.penales.rival} en total</span></div>
+      <div class="tarj-stats">
+        ${comp('Penales', s.penales.nosotros, s.penales.rival)}
+        <div class="muted" style="font-size:12.5px">Izquierda ${esc(nos)}, derecha ${esc(p.rival)}.</div>
+      </div>
+
+      ${s.penales.porTipo.length ? `
+        <div class="sec-title">Por tipo<span>los nuestros</span></div>
+        <div class="tarj-stats">${ranking(s.penales.porTipo, false)}</div>` : ''}
+
+      ${s.penales.porJugador.length ? `
+        <div class="sec-title">Por jugador</div>
+        <div class="tarj-stats">
+          ${ranking(s.penales.porJugador, false)}
+          ${s.penales.sinJugador ? `<div class="muted" style="font-size:12.5px">${
+            s.penales.sinJugador === 1 ? 'Un penal quedó' : `${s.penales.sinJugador} penales quedaron`} sin jugador.</div>` : ''}
+        </div>` : ''}
+
+      ${hayForm ? `
+        <div class="sec-title">Formaciones<span>solo nuestras</span></div>
+        <div class="grid-datos">
+          ${pScrum !== null ? dato(pScrum + '%', 'Scrum', `${f.scrum.g} de ${f.scrum.g + f.scrum.p}`, pScrum >= 75) : ''}
+          ${pLine !== null ? dato(pLine + '%', 'Line', `${f.line.g} de ${f.line.g + f.line.p}`, pLine >= 75) : ''}
+          ${robadas ? dato(robadas, 'Robadas', [
+            f.scrum.r ? `${f.scrum.r} scrum` : '', f.line.r ? `${f.line.r} line` : ''].filter(Boolean).join(' · ')) : ''}
+          ${f.knock_on ? dato(f.knock_on, 'Knock on', '') : ''}
+        </div>` : ''}
+
+      ${s.tarjetas.length ? `
+        <div class="sec-title">Tarjetas</div>
+        <div class="tarj-stats">
+          ${s.tarjetas.map((e) => `
+            <div class="barra">
+              <span class="tx">${e.tipo === 'roja' ? '🟥' : '🟨'} ${esc(e.apellido
+                ? `${e.nombre} ${e.apellido}`
+                : e.equipo === 'rival' ? p.rival : nos)}</span>
+              <span class="muted" style="font-size:12px">${minutoDe(e)}'</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+      ${s.cambios.length ? `
+        <div class="sec-title">Cambios<span>${s.cambios.length} ${s.cambios.length === 1 ? 'usado' : 'usados'}</span></div>
+        <div class="progreso">
+          ${s.cambios.map((e) => `<span class="chip">${esc(e.apellido || '—')} por ${esc(e.apellido_2 || '—')} ${minutoDe(e)}'</span>`).join('')}
+        </div>` : ''}
+
+      <div style="height:6px"></div>
+      <button class="btn" data-compartir-stats>Compartir los números</button>
+    `}`;
+
+  shell({
+    titulo: 'Estadísticas',
+    sub: `${nos} ${v.marcador.nosotros} - ${v.marcador.rival} ${p.rival}`,
+    back: true,
+    tab: 'vivo',
+    contenido,
+  });
+
+  app.querySelectorAll('[data-per]').forEach((b) => {
+    b.onclick = () => { PERIODO_STATS = Number(b.dataset.per); pintarStats(); };
+  });
+  const comp2 = $('[data-compartir-stats]');
+  if (comp2) comp2.onclick = () => sheetTexto('Los números', textoStats(v, PERIODO_STATS));
+}
+
+// El mismo recorte que estás mirando, en texto para el grupo
+function textoStats(v, periodo) {
+  const p = v.partido;
+  const s = calcularStats(v, periodo);
+  const nos = nombreEquipo(p.equipo);
+  const l = [];
+  l.push(`*${nos} ${v.marcador.nosotros} - ${v.marcador.rival} ${p.rival}*`);
+  l.push(periodo ? `Números del ${periodo === 1 ? '1er' : '2do'} tiempo` : 'Números del partido');
+  l.push('');
+
+  if (s.puntos.length) {
+    l.push('*PUNTOS*');
+    for (const t of s.puntos) l.push(`${t.n}: ${t.nosotros} - ${t.rival}`);
+    l.push('');
+  }
+  l.push('*PENALES COMETIDOS*');
+  l.push(`${nos} ${s.penales.nosotros} · ${p.rival} ${s.penales.rival}`);
+  if (s.penales.porTipo.length) l.push(s.penales.porTipo.map(([t, n]) => `${t}: ${n}`).join(' · '));
+  if (s.penales.porJugador.length) {
+    l.push('Por jugador — ' + s.penales.porJugador.map(([j, n]) => `${j}: ${n}`).join(' · '));
+  }
+  l.push('');
+
+  const f = s.formaciones;
+  const pct = (o) => (o.g + o.p ? Math.round((o.g / (o.g + o.p)) * 100) : null);
+  const fs = [];
+  if (pct(f.scrum) !== null) fs.push(`Scrum ${f.scrum.g}/${f.scrum.g + f.scrum.p} (${pct(f.scrum)}%)`);
+  if (pct(f.line) !== null) fs.push(`Line ${f.line.g}/${f.line.g + f.line.p} (${pct(f.line)}%)`);
+  if (fs.length || f.scrum.r + f.line.r || f.knock_on) {
+    l.push('*FORMACIONES*');
+    if (fs.length) l.push(fs.join(' · '));
+    if (f.scrum.r + f.line.r) l.push(`Robadas al rival: ${f.scrum.r + f.line.r}`);
+    if (f.knock_on) l.push(`Knock on: ${f.knock_on}`);
+    l.push('');
+  }
+  if (s.tarjetas.length) {
+    l.push('*TARJETAS*');
+    for (const e of s.tarjetas) {
+      const quien = e.apellido ? `${e.nombre} ${e.apellido}` : (e.equipo === 'rival' ? p.rival : nos);
+      l.push(`${minutoDe(e)}' ${e.tipo === 'roja' ? '🟥' : '🟨'} ${quien}`);
+    }
+  }
+  return l.join('\n').trim();
+}
+
 /* -------------------------------------------------------------- usuarios */
 
 async function viewUsuarios() {
@@ -1735,6 +1989,7 @@ function tickVivo() {
   if (!VIVO) return;
   const r = $('#reloj');
   if (r) r.textContent = mmss(segundosActuales(VIVO));
+  tickAvisoParado();
   const abs = absActual(VIVO);
   app.querySelectorAll('[data-tarjeta]').forEach((el) => {
     const t = VIVO.tarjetas.find((x) => String(x.id) === el.dataset.tarjeta);
@@ -1745,21 +2000,45 @@ function tickVivo() {
   });
 }
 
+// Minutos que tiene que estar parado el reloj para que aparezca el aviso.
+// Una interrupción normal no molesta; olvidarse de arrancarlo, sí.
+const AVISO_PARADO_SEG = 120;
+
+// El aviso aparece recién a los dos minutos y dice hace cuánto está parado
+function tickAvisoParado() {
+  const caja = $('#aviso-parado');
+  if (!caja) return;
+  const p = VIVO.partido;
+  const desfase = VIVO.recibido - VIVO.ahora;
+  const seg = Math.floor((Date.now() - desfase - p.reloj_parado_desde) / 1000);
+  caja.hidden = seg < AVISO_PARADO_SEG;
+  const b = $('#parado-hace');
+  if (b && !caja.hidden) b.textContent = mmss(seg);
+}
+
 function pintarVivo() {
   const v = VIVO, p = v.partido;
   const corriendo = !!p.reloj_corriendo;
   const terminado = p.estado === 'finalizado';
+  // Rojo quiere decir una sola cosa: el partido está en juego y el reloj no
+  // corre. Antes del saque y en el entretiempo el reloj también está quieto,
+  // pero eso no es un problema, así que queda neutro.
+  const parado = p.estado === 'en_curso' && !corriendo && p.reloj_base_seg > 0;
   const activas = v.tarjetas.filter((t) => t.tipo === 'roja' || t.restante > 0);
 
   const cabecera = `
     <div class="vivo-fijo">
       <div class="lado"><span class="eq trunc">${esc(nombreEquipo(p.equipo))}</span><span class="pts">${v.marcador.nosotros}</span></div>
-      <button class="reloj-chico ${corriendo ? 'on' : ''}" data-toggle ${terminado ? 'disabled' : ''}>
+      <button class="reloj-chico ${corriendo ? 'on' : ''}${parado ? ' parado' : ''}" data-toggle ${terminado ? 'disabled' : ''}>
         <b id="reloj">${mmss(segundosActuales(v))}</b>
-        <span>${terminado ? 'final' : (corriendo ? '❙❙ ' : '▶ ') + nombrePeriodo(p)}</span>
+        <span>${terminado ? 'final' : parado ? '▶ Parado' : (corriendo ? '❙❙ ' : '▶ ') + nombrePeriodo(p)}</span>
       </button>
       <div class="lado"><span class="eq trunc">${esc(p.rival)}</span><span class="pts">${v.marcador.rival}</span></div>
     </div>
+    ${parado && p.reloj_parado_desde ? `<div class="aviso-parado" id="aviso-parado" hidden>
+      <span class="punto"></span>Tiempo parado — tocá el reloj para seguir
+      <b id="parado-hace"></b>
+    </div>` : ''}
     <div class="vivo-tabs">
       ${[['puntos', 'Puntos'], ['formaciones', 'Formaciones'], ['cambios', 'Cambios'], ['crono', 'Cronología']]
         .map(([k, n]) => `<button data-tab="${k}" class="${TAB_VIVO === k ? 'on' : ''}">${n}</button>`).join('')}
@@ -1773,7 +2052,8 @@ function pintarVivo() {
     sub: `${nombreEquipo(p.equipo)} vs ${p.rival}`,
     tab: 'vivo',
     bajo: cabecera,
-    acciones: `<button data-menu aria-label="Opciones">&#8942;</button>`,
+    acciones: `<button data-stats aria-label="Estadísticas">${ICON.stats}</button>
+      <button data-menu aria-label="Opciones">&#8942;</button>`,
     contenido: TAB_VIVO === 'formaciones' ? panelFormaciones(v)
       : TAB_VIVO === 'cambios' ? panelCambios(v)
       : TAB_VIVO === 'crono' ? panelCrono(v)
@@ -1786,11 +2066,13 @@ function pintarVivo() {
   const tog = $('[data-toggle]');
   if (tog && !terminado) tog.onclick = () => accionReloj(corriendo ? 'pausar' : 'iniciar');
   $('[data-menu]').onclick = () => menuVivo();
+  $('[data-stats]').onclick = () => { location.hash = '#/stats/' + p.id; };
 
   if (TAB_VIVO === 'puntos') handlersPuntos(v);
   if (TAB_VIVO === 'formaciones') handlersFormaciones(v);
   if (TAB_VIVO === 'cambios') handlersCambios(v);
   if (TAB_VIVO === 'crono') handlersCrono(v);
+  tickAvisoParado();
 }
 
 /* ------------------------------------------------------------- pestañas */
@@ -2554,6 +2836,7 @@ async function router() {
   try {
     if (h.startsWith('#/vivo/')) return await viewVivo(h.split('/')[2]);
     if (h.startsWith('#/vivo')) return await viewVivo();
+    if (h.startsWith('#/stats/')) return await viewStats(h.split('/')[2]);
     if (h.startsWith('#/partido/')) return await viewPartido(h.split('/')[2]);
     if (h.startsWith('#/informe/')) return await viewInforme(h.split('/')[2]);
     if (h.startsWith('#/informe')) return await viewInforme();

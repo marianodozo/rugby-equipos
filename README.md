@@ -64,6 +64,14 @@ La pestaña **En vivo** sigue el partido desde la cancha:
   interrupción. **Vive en el servidor**, así que si lo arranca uno lo ven todos,
   y si se cierra la app el tiempo sigue bien. Se puede corregir a mano desde el
   menú ⋮ si alguien se olvidó de pararlo.
+- **Cuando está parado se ve**: el reloj se pone rojo y dice *Parado*, y a los
+  **dos minutos** aparece abajo una banda roja contando hace cuánto. El rojo
+  significa una sola cosa —el partido está en juego y el tiempo no corre—, así
+  que antes del saque y en el entretiempo queda neutro. La banda está en la
+  cabecera fija, se ve desde cualquiera de las cuatro pestañas, y existe porque
+  el error caro no es confundirse un segundo: es que el reloj quede parado sin
+  que nadie se dé cuenta y todos los eventos que se carguen después queden con
+  el minuto mal. El umbral es `AVISO_PARADO_SEG` en `public/app.js`.
 - **Puntos**: try (5), conversión (2), penal (3), drop (3) y try penal (7).
   Primero elegís de qué lado fue con el selector, y si es nuestro te pide el
   jugador — buscando por número del plantel, apellido o apodo, y con la opción
@@ -104,6 +112,27 @@ La pestaña **En vivo** sigue el partido desde la cancha:
 - La pantalla se refresca sola cada 8 segundos, así que dos personas pueden
   cargar en paralelo desde sus celulares. Mientras esté abierta, la app pide no
   apagar la pantalla.
+
+### Estadísticas del partido
+
+Se entra por el **ícono de barras en la cabecera del En vivo**, al lado del ⋮, y
+también desde un partido ya jugado. Es una pantalla propia, así que sirve igual
+en el entretiempo que tres semanas después, y con el partido en juego se
+refresca sola cada 10 segundos.
+
+Arriba hay un selector de **todo el partido / 1er tiempo / 2do tiempo** que
+recorta todos los números de abajo — esa es la pieza que la hace útil en el
+entretiempo. No hizo falta guardar nada nuevo: cada evento ya tiene su período,
+y la pantalla se calcula entera en el navegador con lo que devuelve
+`/api/matches/:id/vivo`.
+
+Muestra cómo se hicieron los puntos y los penales cometidos comparados contra el
+rival en la misma escala (nosotros a la izquierda, el rival a la derecha), los
+penales nuestros desglosados **por tipo** y **por jugador**, las formaciones con
+su porcentaje, las tarjetas y los cambios. Del rival solo tenemos puntos,
+penales y tarjetas, así que las secciones que no aplican lo aclaran. No hay
+posesión ni metros ni tackles porque eso no se carga. El botón de abajo arma el
+mismo recorte en texto para WhatsApp.
 
 Los estados del partido son **programado → en curso → finalizado**. En la lista
 de Partidos, los que están en juego aparecen arriba con el marcador en vivo, y

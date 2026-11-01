@@ -84,6 +84,9 @@ agregarColumna('matches', 'reloj_corriendo', 'INTEGER NOT NULL DEFAULT 0');
 agregarColumna('matches', 'reloj_base_seg', 'INTEGER NOT NULL DEFAULT 0'); // segundos acumulados del período
 agregarColumna('matches', 'reloj_desde', 'INTEGER');                       // epoch ms desde que corre (o NULL)
 agregarColumna('matches', 'primer_tiempo_seg', 'INTEGER NOT NULL DEFAULT 0');
+// Desde cuándo está parado el reloj (epoch ms), para avisar si se olvidaron
+// de arrancarlo. NULL cuando corre o cuando el período todavía no empezó.
+agregarColumna('matches', 'reloj_parado_desde', 'INTEGER');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS match_events (
